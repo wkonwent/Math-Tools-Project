@@ -1,0 +1,49 @@
+---
+title: "data-exploration"
+author: "Weronika Konwent"
+date: "2026-11-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+## Exploratory data analysis
+
+Data are from: Mesquita, Daniel O., et al. “Life history data of lizards of the world (Ecological Archives E096-058).” Ecology 96.2 (2015): 594-594.
+
+Looks like there are lots of NAs in our data, particularly in the measured observation. Reproduction, foraging, distribution, and habitat all have lots of 
+
+```{r looking at trends}
+#read in dataset
+lizard <- read.csv("lizard.csv")
+
+head(lizard)
+dim(lizard)
+tail(lizard) #oooh empty rows i hate that, let's delete
+names(lizard)
+str(lizard)
+
+#ok first let's remove the empty rows at the end
+lizard <- lizard[1:(nrow(lizard)-3), ]
+
+#then let's look at NAs - lots!
+colSums(is.na(lizard))
+
+#let's look at what we do know, to try to choose a balanced design
+table(lizard$Mode.of.reproduction) #lots, but not balanced
+table(lizard$Foraging.Mode) #well balanced!
+table(lizard$Distribution) #also well balanced!
+table(lizard$Prefered.Habitat.Type) #not well balanced at all, beware
+```
+
+## Visualizing
+
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
