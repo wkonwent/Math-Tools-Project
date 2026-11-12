@@ -7,14 +7,15 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-
+library(ggplot2)
 ```
 
 ## Exploratory data analysis
 
 Data are from: Mesquita, Daniel O., et al. “Life history data of lizards of the world (Ecological Archives E096-058).” Ecology 96.2 (2015): 594-594.
 
-Looks like there are lots of NAs in our data, particularly in the measured observation. Reproduction, foraging, distribution, and habitat all have lots of 
+Looks like there are lots of NAs in our data, particularly in the measured observation. Reproduction, foraging, distribution, and habitat all have lots of data. Of measured data, also mean clutch siz, clutch frequency, and mean.f.svl
+*What's the difference between clutch frequency and clutch number per year? frequency has many more observations, but the numbers are quite similar. 
 
 ```{r looking at trends}
 #read in dataset
@@ -37,13 +38,22 @@ table(lizard$Mode.of.reproduction) #lots, but not balanced
 table(lizard$Foraging.Mode) #well balanced!
 table(lizard$Distribution) #also well balanced!
 table(lizard$Prefered.Habitat.Type) #not well balanced at all, beware
+summary(lizard$Mean.Clutch.Size) #huh. probably a few high outliers. only 4 NAs
+table(lizard$Clutch.Frequency) #weird low outliers, probably. i bet this might match with eggs v living. plot it!
 ```
 
 ## Visualizing
 
 
 ```{r pressure, echo=FALSE}
-plot(pressure)
+hist(lizard$Mean.Clutch.Size)
+hist(lizard$Clutch.Frequency)
+hist(lizard$Mean.F.SVL.adults..mm.)
+
+#to see relationship of repro mode and clutch size. not as obvious as i thought
+ggplot(lizard, aes(x = Mode.of.reproduction,
+                   y = Mean.Clutch.Size,
+                   fill = Mode.of.reproduction)) + geom_boxplot()
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
