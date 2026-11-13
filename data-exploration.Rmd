@@ -7,14 +7,29 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+install.packages("factoextra")
 
+library(tidyverse)
+library(ggplot2)
+library(corrplot) # For correlation plots
+library(FactoMineR) # For PCA
+library(factoextra) # For PCA plots
+library(GGally) # For multiple plots
+
+library(rsample)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(caret)
+library(class) 
 ```
 
 ## Exploratory data analysis
 
 Data are from: Mesquita, Daniel O., et al. “Life history data of lizards of the world (Ecological Archives E096-058).” Ecology 96.2 (2015): 594-594.
 
-Looks like there are lots of NAs in our data, particularly in the measured observation. Reproduction, foraging, distribution, and habitat all have lots of 
+Looks like there are lots of NAs in our data, particularly in the measured observation. Reproduction, foraging, distribution, and habitat all have lots of data. Of measured data, also mean clutch siz, clutch frequency, and mean.f.svl
+*What's the difference between clutch frequency and clutch number per year? frequency has many more observations, but the numbers are quite similar. 
 
 ```{r looking at trends}
 #read in dataset
@@ -26,24 +41,154 @@ tail(lizard) #oooh empty rows i hate that, let's delete
 names(lizard)
 str(lizard)
 
-#ok first let's remove the empty rows at the end
-lizard <- lizard[1:(nrow(lizard)-3), ]
-
 #then let's look at NAs - lots!
 colSums(is.na(lizard))
 
 #let's look at what we do know, to try to choose a balanced design
+table(lizard$Family)
 table(lizard$Mode.of.reproduction) #lots, but not balanced
 table(lizard$Foraging.Mode) #well balanced!
 table(lizard$Distribution) #also well balanced!
 table(lizard$Prefered.Habitat.Type) #not well balanced at all, beware
+summary(lizard$Mean.Clutch.Size) #huh. probably a few high outliers. only 4 NAs
+table(lizard$Clutch.Frequency) #weird low outliers, probably. i bet this might match with eggs v living. plot it!
+```
+
+```{r cleaning data}
+#ok first let's remove the empty rows at the end
+lizard <- lizard[1:(nrow(lizard)-3), ]
+
+#now let's change our variables to be numeric, where they should be
+lizard %>%
+  mutate(SD.Female.adult.weight..g. = as.numeric(SD.Female.adult.weight..g.)) -> lizard
+
+
 ```
 
 ## Visualizing
 
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+```{r intro visualizing}
+hist(lizard$Mean.Clutch.Size)
+hist(lizard$Clutch.Frequency)
+hist(lizard$Mean.F.SVL.adults..mm.)
+
+#to see relationship of repro mode and clutch size. not as obvious as i thought
+ggplot(lizard, aes(x = Mode.of.reproduction,
+                   y = Mean.Clutch.Size,
+                   fill = Mode.of.reproduction)) + geom_boxplot()
+
+ggplot(lizard, aes(x = Prefered.Habitat.Type,
+                   y = Mean.Clutch.Size,
+                   fill = Distribution)) + geom_boxplot()
+
+```
+Let's look at a pca to see if we can get at explaining family from some of these numerical stats
+```{r exploratory PCAs}
+#first, looking again at families
+sort(table(lizard$Family), decreasing = TRUE) -> family_counts #plenty here with very few individuals, so let's cut our dataset down to....the top 12
+
+top12_families <- names(family_counts)[1:12]
+
+lizard_top12 <- lizard[lizard$Family %in% top12_families,]
+
+table(lizard_top12$Family)
+
+#ok, then, looking at which numerical variables we have...
+str(lizard_top12)
+
+#we should choose those we're interested in, that have the fewest NAs
+lizard_top12 %>%
+  select(
+    Mean.F.SVL.adults..mm.,
+    F.SVL.at.maturity..mm.,
+    Mean.Clutch.Size,
+    Clutch.Frequency) %>%
+  na.omit() %>%
+  scale() %>%
+  as.data.frame() -> lizard_scaled
+
+PCA(lizard_scaled, 
+    scale.unit = TRUE, # Option to center and scale data (useless here)
+    ncp = 4, # Number of components to keep (here, all)
+    graph = FALSE) -> pca_lizard
+
+summary(pca_lizard)
+
+fviz_eig(pca_lizard, choice = "variance")
+
+fviz_pca_var(pca_lizard,
+             axes = c(1, 2), col.var="cos2")
+```
+```{r random forest}
+lizard_top12 %>%
+  select(
+    Family,
+    Mean.F.SVL.adults..mm.,
+    F.SVL.at.maturity..mm.,
+    Mean.Clutch.Size,
+    Clutch.Frequency) %>%
+  na.omit() -> rf_lizard
+
+# Check how many observations remain after removing NAs
+nrow(rf_lizard)
+
+#make a dataset with quant and qual
+forest_vars <- c(
+  "Mean.F.SVL.adults..mm.",
+  "F.SVL.at.maturity..mm.",
+  "Offspring.SVL..mm.",
+  "Mean.Clutch.Size",
+  "Clutch.Frequency",
+  "Mode.of.reproduction",
+  "Distribution",
+  "Foraging.Mode",
+  "Prefered.Habitat.Type")
+
+# Check missing values in each predictor
+colSums(is.na(lizard_top12[, forest_vars]))
+
+# Count how many rows have complete data for all predictors
+sum(complete.cases(lizard_top12[, c("Family", forest_vars)]))
+
+forest_data <- lizard_top12 %>%
+  select(Family, all_of(forest_vars)) %>%
+  na.omit() %>%
+  mutate(across(where(is.character), as.factor))
+
+# Check how many observations remain
+nrow(forest_data)
+
+# Check how many observations there are in each family
+table(forest_data$Family)
+
+#here we go!
+set.seed(123)
+
+split_lizard <- initial_split(forest_data, prop = 0.75, strata = "Family") #this allows us to split our dataset into training and testing datasets
+train_lizard <- analysis(split_lizard)
+test_lizard  <- assessment(split_lizard)
+
+# Check the sizes
+dim(train_lizard)
+nrow(test_lizard)
+
+# Check family representation in each set
+table(train_lizard$Family)
+table(test_lizard$Family)
+
+forest <- randomForest(
+  Family ~ .,
+  data = train_lizard,
+  ntree = 1000, 
+  importance = TRUE)
+
+forest_predictions <- predict(forest, newdata = select(test_lizard, -Family))
+
+forest_confusion <- confusionMatrix(forest_predictions, test_lizard$Family) 
+forest_confusion
+
+varImpPlot(forest)
+
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
