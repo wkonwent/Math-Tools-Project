@@ -9,6 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 install.packages("factoextra")
 
+#for PCAs
 library(tidyverse)
 library(ggplot2)
 library(corrplot) # For correlation plots
@@ -16,6 +17,7 @@ library(FactoMineR) # For PCA
 library(factoextra) # For PCA plots
 library(GGally) # For multiple plots
 
+#for random forest
 library(rsample)
 library(rpart)
 library(rpart.plot)
@@ -28,7 +30,7 @@ library(class)
 
 Data are from: Mesquita, Daniel O., et al. “Life history data of lizards of the world (Ecological Archives E096-058).” Ecology 96.2 (2015): 594-594.
 
-Looks like there are lots of NAs in our data, particularly in the measured observation. Reproduction, foraging, distribution, and habitat all have lots of data. Of measured data, also mean clutch siz, clutch frequency, and mean.f.svl
+Looks like there are lots of NAs in our data, particularly in the measured observation. Reproduction, foraging, distribution, and habitat all have lots of data. Of measured data, also mean clutch size, clutch frequency, and mean.f.svl
 *What's the difference between clutch frequency and clutch number per year? frequency has many more observations, but the numbers are quite similar. 
 
 ```{r looking at trends}
@@ -36,51 +38,54 @@ Looks like there are lots of NAs in our data, particularly in the measured obser
 lizard <- read.csv("lizard.csv")
 
 head(lizard)
-dim(lizard)
-tail(lizard) #oooh empty rows i hate that, let's delete
-names(lizard)
-str(lizard)
+tail(lizard) #oooh empty rows at the end to delete!
+dim(lizard) #740 -> 737 obs
+names(lizard) #column names
+str(lizard) #variable type. some issues here. chr that should be num
 
 #then let's look at NAs - lots!
+#best ones look like family (etc), repro, foraging, distribution, habitat, mean.clutch size, clutch frequency, mean.f.svl.adults
 colSums(is.na(lizard))
 
 #let's look at what we do know, to try to choose a balanced design
-table(lizard$Family)
+table(lizard$Family) #uneven distribution for sure. 
 table(lizard$Mode.of.reproduction) #lots, but not balanced
 table(lizard$Foraging.Mode) #well balanced!
 table(lizard$Distribution) #also well balanced!
-table(lizard$Prefered.Habitat.Type) #not well balanced at all, beware
+table(lizard$Prefered.Habitat.Type) #not well balanced at all, beware. could maybe clump?
 summary(lizard$Mean.Clutch.Size) #huh. probably a few high outliers. only 4 NAs
-table(lizard$Clutch.Frequency) #weird low outliers, probably. i bet this might match with eggs v living. plot it!
+table(lizard$Clutch.Frequency) #weird low outliers, should this not be number of clutches per year? weird if so. maybe needs to be changed to categorical?
 ```
 
 ```{r cleaning data}
 #ok first let's remove the empty rows at the end
 lizard <- lizard[1:(nrow(lizard)-3), ]
 
-#now let's change our variables to be numeric, where they should be
+#now let's change SD Female adult weight to numeric.
+#hmm, .upon looking at the data, it seems that the issue is that one of the obs has a comma where it should have a decimal. let's fix that!
 lizard %>%
-  mutate(SD.Female.adult.weight..g. = as.numeric(SD.Female.adult.weight..g.)) -> lizard
+  mutate(SD.Female.adult.weight..g. = as.numeric(
+    str_replace(SD.Female.adult.weight..g., ",", "."))) -> lizard
 
-
+#let's change clutch frequency to be a categorical variable 
+lizard %>%
+  mutate(Clutch.Frequency = case_when(
+    Clutch.Frequency <= 1 ~ "1", #here we're including those that are less than one. can we do that?
+    Clutch.Frequency == 2 ~ "2")) %>%
+  mutate(Clutch.Frequency = factor(Clutch.Frequency)) -> lizard
 ```
 
 ## Visualizing
 
-
 ```{r intro visualizing}
 hist(lizard$Mean.Clutch.Size)
-hist(lizard$Clutch.Frequency)
 hist(lizard$Mean.F.SVL.adults..mm.)
+ggplot(lizard, aes(x = Clutch.Frequency)) + geom_bar()
 
 #to see relationship of repro mode and clutch size. not as obvious as i thought
 ggplot(lizard, aes(x = Mode.of.reproduction,
                    y = Mean.Clutch.Size,
                    fill = Mode.of.reproduction)) + geom_boxplot()
-
-ggplot(lizard, aes(x = Prefered.Habitat.Type,
-                   y = Mean.Clutch.Size,
-                   fill = Distribution)) + geom_boxplot()
 
 ```
 Let's look at a pca to see if we can get at explaining family from some of these numerical stats
@@ -90,9 +95,10 @@ sort(table(lizard$Family), decreasing = TRUE) -> family_counts #plenty here with
 
 top12_families <- names(family_counts)[1:12]
 
-lizard_top12 <- lizard[lizard$Family %in% top12_families,]
+lizard %>%
+  filter(Family %in% top12_families) -> lizard_top12
 
-table(lizard_top12$Family)
+sort(table(lizard_top12$Family), decreasing = TRUE)
 
 #ok, then, looking at which numerical variables we have...
 str(lizard_top12)
@@ -120,7 +126,9 @@ fviz_eig(pca_lizard, choice = "variance")
 fviz_pca_var(pca_lizard,
              axes = c(1, 2), col.var="cos2")
 ```
-```{r random forest}
+
+Ok, let's try running a random forest to predict family
+```{r random forest Family}
 lizard_top12 %>%
   select(
     Family,
@@ -189,6 +197,49 @@ forest_confusion <- confusionMatrix(forest_predictions, test_lizard$Family)
 forest_confusion
 
 varImpPlot(forest)
+
+```
+
+On second thought, random forest to predict family is maybe not as useful, since we usually have family but don't often have the other measurements. so what if we do a random forest to predict a different variable, say mean clutch size, based on family. 
+```{r random forest Mean.Clutch.Size}
+#let's just look at what it might look like, by family, with our own calculated SD
+lizard %>%
+  group_by(Family) %>%
+  summarise(observations = sum(!is.na(Mean.Clutch.Size)),
+            mean_clutch = mean(Mean.Clutch.Size, na.rm = TRUE),
+            sd_clutch = sd(Mean.Clutch.Size, na.rm = TRUE)) %>%
+  arrange(desc(mean_clutch))
+
+#ok, let's cut the data so it's only what we're interested in
+lizard %>%
+  select(Species, Family, Mean.Clutch.Size) %>%
+  filter(!is.na(Species),
+         !is.na(Family),
+         !is.na(Mean.Clutch.Size)) %>%
+  mutate(Species = as.factor(Species),
+         Family = as.factor(Family)) -> clutch_data
+
+#now we'll split into our training and testing sets, being careful to make sure that the species are spread evenly between the two groups
+set.seed(123)
+
+species_list <- unique(clutch_data$Species)
+
+train_species <- sample(species_list, size = floor(0.7 * length(species_list)))
+
+train_data <- clutch_data %>%
+  filter(Species %in% train_species)
+
+test_data <- clutch_data %>%
+  filter(!Species %in% train_species)
+
+#ok, now let's make the forest
+#messed around with n, could honestly probably do anywhere from 100 up
+randomForest(Mean.Clutch.Size ~ Family,
+             data = train_data,
+             ntree = 500,
+             importance = TRUE) -> clutch_forest
+
+clutch_forest
 
 ```
 
