@@ -31,11 +31,10 @@ library(class)
 Data are from: Mesquita, Daniel O., et al. “Life history data of lizards of the world (Ecological Archives E096-058).” Ecology 96.2 (2015): 594-594.
 
 Looks like there are lots of NAs in our data, particularly in the measured observation. Reproduction, foraging, distribution, and habitat all have lots of data. Of measured data, also mean clutch size, clutch frequency, and mean.f.svl
-*What's the difference between clutch frequency and clutch number per year? frequency has many more observations, but the numbers are quite similar. 
 
 ```{r looking at trends}
 #read in dataset
-lizard <- read.csv("lizard.csv")
+lizard <- read.csv("data/raw/lizard.csv")
 
 head(lizard)
 tail(lizard) #oooh empty rows at the end to delete!
@@ -63,16 +62,29 @@ lizard <- lizard[1:(nrow(lizard)-3), ]
 
 #now let's change SD Female adult weight to numeric.
 #hmm, .upon looking at the data, it seems that the issue is that one of the obs has a comma where it should have a decimal. let's fix that!
-lizard %>%
+lizard_climate %>%
   mutate(SD.Female.adult.weight..g. = as.numeric(
     str_replace(SD.Female.adult.weight..g., ",", "."))) -> lizard
+
+#let's save these data in a new lizard file
+write.csv(lizard, "data/working/lizard.csv", row.names = FALSE)
+
+```
+
+
+Let's add climate data from CHELSA, particularly precip seasonality, temp seasonality, and mean annual temp. 
+```{r adding climate data}
+#these data are downloaded from CHELSA, applied in QGIS, joined with original lizard, and then exported to csv
+lizard <- read.csv("data/working/lizard-climate.csv")
+
 
 #let's change clutch frequency to be a categorical variable 
 lizard %>%
   mutate(Clutch.Frequency = case_when(
-    Clutch.Frequency <= 1 ~ "1", #here we're including those that are less than one. can we do that?
+    Clutch.Frequency <= 1 ~ "<= 1", #here we're including those that are less than one. can we do that?
     Clutch.Frequency == 2 ~ "2")) %>%
   mutate(Clutch.Frequency = factor(Clutch.Frequency)) -> lizard
+
 ```
 
 ## Visualizing
@@ -87,36 +99,103 @@ ggplot(lizard, aes(x = Mode.of.reproduction,
                    y = Mean.Clutch.Size,
                    fill = Mode.of.reproduction)) + geom_boxplot()
 
+ggplot(lizard, aes(x = Distribution,
+                   y = Clutch.Frequency,
+                   fill = Distribution)) + geom_boxplot()
+
+ggplot(lizard, aes(x = Family,
+                   fill = Mode.of.reproduction)) + geom_bar()
+
+ggplot(lizard, aes(x = Distribution,
+                   fill = Clutch.Frequency)) + geom_bar()
+
 ```
+
+```{r removing unecessary columns}
+##let's look at how the variables correlate to see if we can cut some.
+
+lizard %>% 
+  select_if(is.numeric) %>% #select just the quantitative variables
+  cor(use = "complete.obs") %>% #this let's us get around NAs
+  corrplot() #and plot
+
+#if we focus on variables that are >=0.8, we can decide if some of them are related and could be removed
+#even though lat and long are highly correlated, we'll keep both. I think we can get rid of all SDs, since we're limited by sample size. The sample sizes are also all similar, and since I'm guessing they're just used to calculate the averages, we can remove those. F.SVL at maturity and Mean.F.SVL. adults have a super high correlation - let's remove the at maturity one, since it's just the smallest reproductive female. clutches per year and clutch frequency are essentially the same thing, so let's cut clutches per year since we have fewer observations for it. phew!
+
+#let's cut the columns we tagged
+lizard %>% 
+  select(-SD.Female.adult.weight..g., -Sample.Size.Female.adult.weight, -SD.F.SVL.adults..mm., -Sample.size.Mean.F.SVL.adults, -Sample.size.Clutch.Size., -Clutches.per.year, -F.SVL.at.maturity..mm., -RCM) -> lizard
+```
+
+##Exploratory statistics
+
+Ok, first let's look at some real simple things
+```{r simple stats}
+#relationship between Distribution and Foraging mode
+table(lizard$Distribution, lizard$Foraging.Mode) -> tab_forage
+
+chisq.test(tab_forage)
+#looking very significant!
+
+#what about Distribution and Habitat?
+table(lizard$Distribution, lizard$Prefered.Habitat.Type) -> tab_habitat
+
+chisq.test(tab_habitat)
+#also extremely significant
+
+#what if we tried a glm?
+lizard$Mode.of.reproduction <- factor(
+  lizard$Mode.of.reproduction,
+  levels = c("Oviparous", "Viviparous"))
+
+lizard$Distribution <- factor(
+  lizard$Distribution,
+  levels = c("Tropical", "Temperate"))
+
+glm(Mode.of.reproduction ~ Distribution, data = lizard, family = binomial(link = "logit")) -> model_q1
+
+summary(model_q1)
+
+#with species as random effect
+library(lme4)
+
+model_q1_mixed <- glmer(
+  Mode.of.reproduction ~ Distribution + (1 | Species),
+  data = lizard,
+  family = binomial)
+
+summary(model_q1_mixed)
+
+```
+
+
 Let's look at a pca to see if we can get at explaining family from some of these numerical stats
 ```{r exploratory PCAs}
 #first, looking again at families
-sort(table(lizard$Family), decreasing = TRUE) -> family_counts #plenty here with very few individuals, so let's cut our dataset down to....the top 12
+sort(table(lizard$Family), decreasing = TRUE) -> family_counts #plenty here with very few individuals, so let's cut our dataset down to....the top 13
 
-top12_families <- names(family_counts)[1:12]
+top13_families <- names(family_counts)[1:13]
 
 lizard %>%
-  filter(Family %in% top12_families) -> lizard_top12
+  filter(Family %in% top13_families) -> lizard_top13
 
-sort(table(lizard_top12$Family), decreasing = TRUE)
+sort(table(lizard_top13$Family), decreasing = TRUE)
 
 #ok, then, looking at which numerical variables we have...
-str(lizard_top12)
+str(lizard_top13)
+colSums(is.na(lizard_top13))
 
 #we should choose those we're interested in, that have the fewest NAs
-lizard_top12 %>%
+lizard_top13 %>%
   select(
     Mean.F.SVL.adults..mm.,
-    F.SVL.at.maturity..mm.,
-    Mean.Clutch.Size,
-    Clutch.Frequency) %>%
-  na.omit() %>%
-  scale() %>%
-  as.data.frame() -> lizard_scaled
+    Clutch.Frequency,
+    Mean.Clutch.Size) %>%
+  na.omit() -> lizard_clean
 
-PCA(lizard_scaled, 
+PCA(lizard_clean, 
     scale.unit = TRUE, # Option to center and scale data (useless here)
-    ncp = 4, # Number of components to keep (here, all)
+    ncp = 3, # number of variables
     graph = FALSE) -> pca_lizard
 
 summary(pca_lizard)
@@ -125,55 +204,39 @@ fviz_eig(pca_lizard, choice = "variance")
 
 fviz_pca_var(pca_lizard,
              axes = c(1, 2), col.var="cos2")
+
 ```
 
-Ok, let's try running a random forest to predict family
+Ok, let's try running a random forest to predict family. Whelp, barring some trouble with dividing the families into proportional splits, the random forest was decent at predicting - 82%. but some of the families with fewer individuals are just much worse at predicting. So in the end, you probably could use a whole bunch of characteristics to guess family. but would that be useful? It seems more likely that you would be able to tell family visually, and you might want to predict other characteristics instead. 
 ```{r random forest Family}
-lizard_top12 %>%
+#let's keep the variables that have the fewest NAs
+colSums(is.na(lizard_top13))
+
+lizard_top13 %>%
   select(
     Family,
     Mean.F.SVL.adults..mm.,
-    F.SVL.at.maturity..mm.,
     Mean.Clutch.Size,
-    Clutch.Frequency) %>%
-  na.omit() -> rf_lizard
+    Clutch.Frequency,
+    Mode.of.reproduction,
+    Distribution,
+    Foraging.Mode,
+    Prefered.Habitat.Type) %>%
+  na.omit() %>% 
+  as.data.frame()-> rf_lizard
 
 # Check how many observations remain after removing NAs
 nrow(rf_lizard)
 
-#make a dataset with quant and qual
-forest_vars <- c(
-  "Mean.F.SVL.adults..mm.",
-  "F.SVL.at.maturity..mm.",
-  "Offspring.SVL..mm.",
-  "Mean.Clutch.Size",
-  "Clutch.Frequency",
-  "Mode.of.reproduction",
-  "Distribution",
-  "Foraging.Mode",
-  "Prefered.Habitat.Type")
-
-# Check missing values in each predictor
-colSums(is.na(lizard_top12[, forest_vars]))
-
-# Count how many rows have complete data for all predictors
-sum(complete.cases(lizard_top12[, c("Family", forest_vars)]))
-
-forest_data <- lizard_top12 %>%
-  select(Family, all_of(forest_vars)) %>%
-  na.omit() %>%
-  mutate(across(where(is.character), as.factor))
-
-# Check how many observations remain
-nrow(forest_data)
-
-# Check how many observations there are in each family
-table(forest_data$Family)
+#change Family to categorical
+rf_lizard %>%
+  mutate(across(where(is.character), as.factor),
+         Family = as.factor(Family)) -> rf_lizard
 
 #here we go!
 set.seed(123)
 
-split_lizard <- initial_split(forest_data, prop = 0.75, strata = "Family") #this allows us to split our dataset into training and testing datasets
+split_lizard <- initial_split(rf_lizard, prop = 0.75, strata = "Family") #this allows us to split our dataset into training and testing datasets
 train_lizard <- analysis(split_lizard)
 test_lizard  <- assessment(split_lizard)
 
@@ -181,22 +244,29 @@ test_lizard  <- assessment(split_lizard)
 dim(train_lizard)
 nrow(test_lizard)
 
-# Check family representation in each set
+# Check family representation in each set. hmmm, something is not right for sphaerodactylidae and xenosauridae. what to do?
 table(train_lizard$Family)
 table(test_lizard$Family)
 
-forest <- randomForest(
-  Family ~ .,
+##tune the forest
+params_CV <- trainControl(method = "cv", verboseIter = FALSE, number = 10)
+
+caret::train(
+  Family ~ ., #all variables
   data = train_lizard,
-  ntree = 1000, 
-  importance = TRUE)
+  method = "rf", #using random forest
+  metric = "Accuracy",
+  trControl = params_CV,
+  tuneGrid = expand.grid(mtry = 1:7), #mtry here
+  ntree = 500) -> predictor_forest
 
-forest_predictions <- predict(forest, newdata = select(test_lizard, -Family))
+predictor_forest #final model! most optimized! mtry = 4
 
-forest_confusion <- confusionMatrix(forest_predictions, test_lizard$Family) 
-forest_confusion
+plot(predictor_forest)
 
-varImpPlot(forest)
+rf_cv_predictions <- predict(predictor_forest, newdata = select(test_lizard, -Family))
+rf_cv_confusion <- confusionMatrix(rf_cv_predictions, test_lizard$Family) 
+rf_cv_confusion
 
 ```
 
@@ -204,42 +274,88 @@ On second thought, random forest to predict family is maybe not as useful, since
 ```{r random forest Mean.Clutch.Size}
 #let's just look at what it might look like, by family, with our own calculated SD
 lizard %>%
-  group_by(Family) %>%
-  summarise(observations = sum(!is.na(Mean.Clutch.Size)),
-            mean_clutch = mean(Mean.Clutch.Size, na.rm = TRUE),
-            sd_clutch = sd(Mean.Clutch.Size, na.rm = TRUE)) %>%
-  arrange(desc(mean_clutch))
-
-#ok, let's cut the data so it's only what we're interested in
-lizard %>%
-  select(Species, Family, Mean.Clutch.Size) %>%
-  filter(!is.na(Species),
-         !is.na(Family),
-         !is.na(Mean.Clutch.Size)) %>%
-  mutate(Species = as.factor(Species),
-         Family = as.factor(Family)) -> clutch_data
+  select(
+    Family,
+    Latitude,
+    Longitude,
+    Distribution,
+    Prefered.Habitat.Type,
+    Mean.Clutch.Size) %>%
+  na.omit() %>% 
+  mutate(Family = as.factor(Family)) %>% 
+  as.data.frame() -> clutch_data
 
 #now we'll split into our training and testing sets, being careful to make sure that the species are spread evenly between the two groups
 set.seed(123)
 
-species_list <- unique(clutch_data$Species)
-
-train_species <- sample(species_list, size = floor(0.7 * length(species_list)))
-
-train_data <- clutch_data %>%
-  filter(Species %in% train_species)
-
-test_data <- clutch_data %>%
-  filter(!Species %in% train_species)
+split_clutch <- initial_split(clutch_data, prop = 0.75, strata = "Mean.Clutch.Size") #this allows us to split our dataset into training and testing datasets
+train_clutch <- analysis(split_clutch)
+test_clutch <- assessment(split_clutch)
 
 #ok, now let's make the forest
 #messed around with n, could honestly probably do anywhere from 100 up
-randomForest(Mean.Clutch.Size ~ Family,
-             data = train_data,
-             ntree = 500,
-             importance = TRUE) -> clutch_forest
 
-clutch_forest
+#tune the forest
+params_CV <- trainControl(method = "cv", verboseIter = FALSE, number = 10)
+
+caret::train(
+  Mean.Clutch.Size ~ .,
+  data = train_clutch,
+  method = "rf",
+  metric = "RMSE",
+  trControl = params_CV,
+  tuneGrid = expand.grid(mtry = 1:5),
+  ntree = 500) -> clutch_forest
+
+clutch_forest #final model! most optimized! mtry = 3
+
+plot(clutch_forest)
+
+clutch_predictions <- predict(clutch_forest, newdata = test_clutch)
+
+# Evaluate model performance
+caret::postResample(
+  pred = clutch_predictions,
+  obs = test_clutch$Mean.Clutch.Size)
 
 ```
+
+
+```{r classification tree!}
+lizard_top12 %>% 
+  mutate(Family = as.factor(Family),
+         across(
+           c(Mode.of.reproduction,
+             Foraging.Mode,
+             Distribution,
+             Prefered.Habitat.Type),
+           as.factor)) %>%
+  select(
+    Family,
+    Latitude,
+    Longitude,
+    Mean.F.SVL.adults..mm.,
+    F.SVL.at.maturity..mm.,
+    Average.Female.adult.weight..g.,
+    Mean.Clutch.Size,
+    Offspring.SVL..mm.,
+    Clutches.per.year,
+    Clutch.Frequency,
+    Mode.of.reproduction,
+    Foraging.Mode,
+    Distribution,
+    Prefered.Habitat.Type) -> lizard_tree
+
+set.seed(123)
+
+rpart(
+  Family ~ .,
+  data = lizard_tree,
+  method = "class",
+  control = rpart.control(cp = 0.01, minsplit = 20, xval = 0)) -> tree_model
+
+rpart.plot(tree_model)
+```
+
+
 
