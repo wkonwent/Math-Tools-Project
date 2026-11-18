@@ -12,7 +12,7 @@ format:
     css: colors.css
 # Authors (https://quarto.org/docs/journals/authors.html#author-schema)
 author:
-  - name: Emily Kinnear & Weronika Konwent
+  - name: Curro Beleño Fito, Emily Kinnear, Weronika Konwent
     affiliations:
       - name: AgroParisTech
         department: Scientific Department
