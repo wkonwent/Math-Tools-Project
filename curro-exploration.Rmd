@@ -34,7 +34,9 @@ library(rpart)
 library(rpart.plot)
 library(randomForest)
 library(caret)
-library(class)
+library(class)ç
+library(mlpwr)
+library(car)
 
 ```
 
@@ -44,6 +46,7 @@ library(class)
 lizard <- read.csv( "lizard.csv", fileEncoding = "latin1")
 
 str(lizard)
+view(lizard)
 ```
 
 ```{r data summary}
@@ -110,10 +113,29 @@ rpart.plot(maximal_tree)
 
 ```{r}
 lizard_climate <- read.csv("lizard-climate.csv")
-view(lizard_climate)
+head(lizard)
 ```
 
 ```{r}
-ss
+#Mean.clutch.size
+
+m1 <- glm(
+  Mean.Clutch.Size ~ Average.Female.adult.weight..g. + 
+    Offspring.SVL..mm.+
+    Mode.of.reproduction +
+    Clutch.Frequency +
+    Foraging.Mode +
+    Distribution +
+    Prefered.Habitat.Type,
+  family = gaussian(link = "identity"),
+  data = lizard
+)
+
+summary(m1)
+
+plot(lizard$Mean.Clutch.Size, log(lizard$Average.Female.adult.weight..g.,))
+
+
+
 ```
 
