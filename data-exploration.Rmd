@@ -77,7 +77,10 @@ Let's add climate data from CHELSA, particularly precip seasonality, temp season
 #these data are downloaded from CHELSA, applied in QGIS, joined with original lizard, and then exported to csv
 lizard <- read.csv("data/working/lizard-climate.csv")
 
+#check new variable
+str(lizard)
 
+#quick clean of variable type!
 #let's change clutch frequency to be a categorical variable 
 lizard %>%
   mutate(Clutch.Frequency = case_when(
@@ -92,7 +95,7 @@ lizard %>%
 ```{r intro visualizing}
 hist(lizard$Mean.Clutch.Size)
 hist(lizard$Mean.F.SVL.adults..mm.)
-ggplot(lizard, aes(x = Clutch.Frequency)) + geom_bar()
+#ggplot(lizard, aes(x = Clutch.Frequency)) + geom_bar()
 
 #to see relationship of repro mode and clutch size. not as obvious as i thought
 ggplot(lizard, aes(x = Mode.of.reproduction,
@@ -101,7 +104,7 @@ ggplot(lizard, aes(x = Mode.of.reproduction,
 
 ggplot(lizard, aes(x = Distribution,
                    y = Clutch.Frequency,
-                   fill = Distribution)) + geom_boxplot()
+                   fill = Distribution)) + geom_bar() ###
 
 ggplot(lizard, aes(x = Family,
                    fill = Mode.of.reproduction)) + geom_bar()
@@ -319,43 +322,3 @@ caret::postResample(
   obs = test_clutch$Mean.Clutch.Size)
 
 ```
-
-
-```{r classification tree!}
-lizard_top12 %>% 
-  mutate(Family = as.factor(Family),
-         across(
-           c(Mode.of.reproduction,
-             Foraging.Mode,
-             Distribution,
-             Prefered.Habitat.Type),
-           as.factor)) %>%
-  select(
-    Family,
-    Latitude,
-    Longitude,
-    Mean.F.SVL.adults..mm.,
-    F.SVL.at.maturity..mm.,
-    Average.Female.adult.weight..g.,
-    Mean.Clutch.Size,
-    Offspring.SVL..mm.,
-    Clutches.per.year,
-    Clutch.Frequency,
-    Mode.of.reproduction,
-    Foraging.Mode,
-    Distribution,
-    Prefered.Habitat.Type) -> lizard_tree
-
-set.seed(123)
-
-rpart(
-  Family ~ .,
-  data = lizard_tree,
-  method = "class",
-  control = rpart.control(cp = 0.01, minsplit = 20, xval = 0)) -> tree_model
-
-rpart.plot(tree_model)
-```
-
-
-
