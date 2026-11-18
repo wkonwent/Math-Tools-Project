@@ -43,7 +43,7 @@ library(car)
 
 ```{r read data}
 
-lizard <- read.csv( "lizard.csv", fileEncoding = "latin1")
+lizard <- read.csv( "lizard-climate.csv", fileEncoding = "latin1")
 
 str(lizard)
 view(lizard)
