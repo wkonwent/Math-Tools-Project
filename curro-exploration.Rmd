@@ -20,6 +20,7 @@ knitr::opts_chunk$set(echo = TRUE, eval = FALSE, # change if you want to evaluat
                       warning = FALSE, message = FALSE, comment = NA)
 ```
 
+
 ```{r packages}
 library(dplyr)
 library(tidyverse)
@@ -34,7 +35,7 @@ library(rpart)
 library(rpart.plot)
 library(randomForest)
 library(caret)
-library(class)ç
+library(class)
 library(mlpwr)
 library(car)
 
@@ -50,6 +51,14 @@ write.csv(lizard, "data/working/lizard_working.csv")
 names(lizard)
 view(lizard)
 ```
+
+
+```{r rewrite data}
+
+# write.csv(lizard, "data/working/lizard_working.csv")
+
+```
+
 
 ```{r data summary}
 
@@ -89,91 +98,20 @@ View(summary_table)
 ```
 
 
-```{r}
-cor_matrix <- lizard %>%
-  select(where(is.numeric)) %>%
-  cor()
-corrplot(cor_matrix)
-```
-
-```{r}
-
-split_lizard <- initial_split(lizard, prop = 0.75, strata = "Mean.Clutch.Size")
-train_lizard <- analysis(split_lizard)
-test_lizard  <- assessment(split_lizard)
-
-maximal_tree <- rpart(
-  Mean.Clutch.Size ~  Average.Female.adult.weight..g. + 
-    Offspring.SVL..mm.+
-    Mode.of.reproduction +
-    Clutch.Frequency +
-    Foraging.Mode +
-    Distribution +
-    Prefered.Habitat.Type +
-    precip_seasonality+
-    temp_seasonality+
-    mean_annual_temp,
-  data = train_lizard,
-  method = "class",
-  control = rpart.control(minsplit = 2, cp = 0.018, xval = 10)
-)
-
-rpart.plot(maximal_tree)
-```
-
-
-```{r}
-lizard_climate <- read.csv("lizard-climate.csv")
-head(lizard)
-```
-
-```{r}
-#Linear model
-
-m1 <- glm(
-  Mean.Clutch.Size ~ Average.Female.adult.weight..g. + 
-    Offspring.SVL..mm.+
-    Mode.of.reproduction +
-    Clutch.Frequency +
-    Foraging.Mode +
-    Distribution +
-    Prefered.Habitat.Type +
-    precip_seasonality+
-    temp_seasonality+
-    mean_annual_temp
-    ,
-  family = gaussian(link = "identity"),
-  data = lizard
-)
-
-m2 <- glm(
-  Mean.Clutch.Size ~ Average.Female.adult.weight..g. + 
-    Offspring.SVL..mm.+
-    Mode.of.reproduction +
-    Clutch.Frequency +
-    Foraging.Mode +
-    Distribution +
-    Prefered.Habitat.Type, 
-  family = gaussian(link = "identity"),
-  data = lizard
-)
-
-summary(m1)
-summary(m2)
-
-anova(m1)
-anova(m2)
-
+```{r add abs_latitude}
 lizard$abs_latitude <- abs(lizard$Latitude)
+```
 
+
+```{r plots}
 plot(lizard$Mean.Clutch.Size, lizard$mean_annual_temp)
 plot(Mean.Clutch.Size ~ abs_latitude, data = lizard)
-
-
+plot(lizard$abs_latitude, lizard$Mean.Clutch.Size)
+plot(lizard$Latitude, lizard$Mean.Clutch.Size)
 ```
 
 
-```{r}
+```{r corrplots}
 #corrplots
 
 data_num <- lizard %>% 
@@ -183,3 +121,70 @@ corrplot(corr)
 
 ```
 Correlated variables with mean.clutch.size = Latitude + Female.weight*** + SVL.adults** + F.SVL.maturity** + Offspring.SVL * + RCM*** + temp.seasonality* + mean.annual.temp*
+
+```{r lm}
+#Linear model
+
+m1 <- lm(
+  Mean.Clutch.Size ~ Average.Female.adult.weight..g. + 
+    Offspring.SVL..mm.+
+    Mode.of.reproduction +
+    Clutch.Frequency +
+    Foraging.Mode +
+    Distribution +
+    Prefered.Habitat.Type +
+    precip_seasonality+
+    temp_seasonality+
+    mean_annual_temp,
+  data = lizard
+)
+
+m2 <- lm(
+  Mean.Clutch.Size ~ Average.Female.adult.weight..g. + 
+    Offspring.SVL..mm.+
+    Mode.of.reproduction +
+    Clutch.Frequency +
+    Foraging.Mode +
+    Distribution +
+    Prefered.Habitat.Type, 
+  data = lizard)
+
+summary(m1)
+summary(m2)
+
+anova(m1,m2, test = "Chisq")
+anova(m2)
+
+
+
+plot(lizard$Mean.Clutch.Size, lizard$mean_annual_temp)
+plot(Mean.Clutch.Size ~ abs_latitude, data = lizard)
+plot(lizard$abs_latitude, lizard$Mean.Clutch.Size)
+plot(lizard$Latitude, lizard$Mean.Clutch.Size)
+
+
+```
+
+
+```{r decision tree}
+
+split_lizard <- initial_split(lizard, prop = 0.75, strata = "Mean.Clutch.Size")
+train_lizard <- analysis(split_lizard)
+test_lizard  <- assessment(split_lizard)
+
+maximal_tree <- rpart(
+  Mean.Clutch.Size ~  Average.Female.adult.weight..g. + 
+    Offspring.SVL..mm. +
+    precip_seasonality+
+   mean.annual.temp+
+    Latitude+
+    F.SVL.at.maturity..mm.
+  data = train_lizard,
+  method = "class",
+  control = rpart.control(minsplit = 2, cp = 0.018, xval = 10)
+)
+
+rpart.plot(maximal_tree)
+```
+
+
