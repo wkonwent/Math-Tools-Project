@@ -45,7 +45,7 @@ library(car)
 
 lizard <- read.csv( "lizard-climate.csv", fileEncoding = "latin1")
 
-str(lizard)
+names(lizard)
 view(lizard)
 ```
 
@@ -96,12 +96,21 @@ corrplot(cor_matrix)
 
 ```{r}
 
-split_lizard <- initial_split(lizard_climate, prop = 0.75, strata = "Mean.Clutch.Size")
+split_lizard <- initial_split(lizard, prop = 0.75, strata = "Mean.Clutch.Size")
 train_lizard <- analysis(split_lizard)
 test_lizard  <- assessment(split_lizard)
 
 maximal_tree <- rpart(
-  Mean.Clutch.Size ~ . ,
+  Mean.Clutch.Size ~  Average.Female.adult.weight..g. + 
+    Offspring.SVL..mm.+
+    Mode.of.reproduction +
+    Clutch.Frequency +
+    Foraging.Mode +
+    Distribution +
+    Prefered.Habitat.Type +
+    precip_seasonality+
+    temp_seasonality+
+    mean_annual_temp,
   data = train_lizard,
   method = "class",
   control = rpart.control(minsplit = 2, cp = 0.018, xval = 10)
@@ -117,7 +126,7 @@ head(lizard)
 ```
 
 ```{r}
-#Mean.clutch.size
+#Linear model
 
 m1 <- glm(
   Mean.Clutch.Size ~ Average.Female.adult.weight..g. + 
@@ -126,16 +135,49 @@ m1 <- glm(
     Clutch.Frequency +
     Foraging.Mode +
     Distribution +
-    Prefered.Habitat.Type,
+    Prefered.Habitat.Type +
+    precip_seasonality+
+    temp_seasonality+
+    mean_annual_temp
+    ,
+  family = gaussian(link = "identity"),
+  data = lizard
+)
+
+m2 <- glm(
+  Mean.Clutch.Size ~ Average.Female.adult.weight..g. + 
+    Offspring.SVL..mm.+
+    Mode.of.reproduction +
+    Clutch.Frequency +
+    Foraging.Mode +
+    Distribution +
+    Prefered.Habitat.Type, 
   family = gaussian(link = "identity"),
   data = lizard
 )
 
 summary(m1)
+summary(m2)
 
-plot(lizard$Mean.Clutch.Size, log(lizard$Average.Female.adult.weight..g.,))
+anova(m1)
+anova(m2)
 
+lizard$abs_latitude <- abs(lizard$Latitude)
+
+plot(lizard$Mean.Clutch.Size, lizard$mean_annual_temp)
+plot(Mean.Clutch.Size ~ abs_latitude, data = lizard)
 
 
 ```
 
+
+```{r}
+#corrplots
+
+data_num <- lizard %>% 
+select_if(is.numeric)
+corr = cor(data_num, use = "pairwise.complete.obs")
+corrplot(corr)
+
+```
+Correlated variables with mean.clutch.size = Latitude + Female.weight*** + SVL.adults** + F.SVL.maturity** + Offspring.SVL * + RCM*** + temp.seasonality* + mean.annual.temp*
