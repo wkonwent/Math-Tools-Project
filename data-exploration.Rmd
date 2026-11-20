@@ -278,42 +278,88 @@ rf_cv_confusion
 
 On second thought, random forest to predict family is maybe not as useful, since we usually have family but don't often have the other measurements. so what if we do a random forest to predict a different variable, say mean clutch size, based on family. 
 ```{r random forest Mean.Clutch.Size}
+#random forest can't deal with NAs. so I really think we should run two version of this code, one with all the variables of interest, and one without the ones with a bunch of NAs
+
 #let's divide our df into env and ecological variables
 #environmental
 environmental_vars <- c("mean_annual_temperature", "annual_precip", "precip_seasonality", "temp_seasonality","Latitude", "bioregion")
 
-#ecological
-ecological_vars <- c("Mean.F.SVL.adults..mm.","Offspring.SVL..mm.", "Mode.of.reproduction", "Clutch.Frequency", "Foraging.Mode", "Distribution", "Prefered.Habitat.Type")
+#ecological_all
+ecological_all_vars <- c("Average.Female.adult.weight..g.","Mean.F.SVL.adults..mm.","Offspring.SVL..mm.", "Mode.of.reproduction", "Clutch.Frequency", "Foraging.Mode", "Distribution", "Prefered.Habitat.Type")
+
+ecological_filt_vars <- c("Mean.F.SVL.adults..mm.", "Mode.of.reproduction", "Clutch.Frequency", "Foraging.Mode", "Distribution", "Prefered.Habitat.Type")
 
 #all variables
-all_vars <- c(environmental_vars, ecological_vars)
+all_vars <- c(environmental_vars, ecological_all_vars)
+
+all_filt_vars <- c(environmental_vars, ecological_filt_vars)
+
+#now we have to make no NA datasets for all of these mixes
+#first mean.clutch.size NAs
+lizard_mcs_clean <- lizard %>%
+  drop_na(Mean.Clutch.Size)
+
+# Environmental variables
+env_clean <- lizard %>%
+  select(Mean.Clutch.Size, all_of(environmental_vars)) %>%
+  drop_na()
+
+# All ecological
+ecological_all_clean <- lizard %>%
+  select(Mean.Clutch.Size, all_of(ecological_all_vars)) %>%
+  drop_na()
+
+# Filtered ecological
+ecological_filt_clean <- lizard %>%
+  select(Mean.Clutch.Size, all_of(ecological_filt_vars)) %>%
+  drop_na()
+
+# All combined
+all_clean <- lizard %>%
+  select(Mean.Clutch.Size, all_of(all_vars)) %>%
+  drop_na()
+
+# Filtered combined
+all_filt_clean <- lizard %>%
+  select(Mean.Clutch.Size, all_of(all_filt_vars)) %>%
+  drop_na()
 
 #now we'll split into our training and testing sets, being careful to make sure that the species are spread evenly between the two groups
 set.seed(123)
 
-split_clutch <- initial_split(lizard, prop = 0.75, strata = "Mean.Clutch.Size") #this allows us to split our dataset into training and testing datasets
-train_clutch <- analysis(split_clutch)
-test_clutch <- assessment(split_clutch)
+lizard_noNA <- lizard %>%
+  drop_na()
 
-#ok, now let's make the forest
-#messed around with n, could honestly probably do anywhere from 100 up
+split_clutch <- initial_split(lizard_noNA, prop = 0.75, strata = "Mean.Clutch.Size") #this allows us 
+
+###need to think about what to do about repeat species eeeee
 
 #tune the forest
 params_CV <- trainControl(method = "cv", verboseIter = FALSE, number = 10)
 ```
 
+
 ```{r rf Model1 - environmental}
 
-#random forest
- randomForest(
-  Mean.Clutch.Size ~ environmental_vars,
+#to split our dataset into training and testing datasets
+train_clutch <- analysis(split_clutch)
+test_clutch <- assessment(split_clutch)
+
+
+#random forest environmental all variables
+randomForest(
+  reformulate(environmental_vars, response = "Mean.Clutch.Size"),
   data = train_clutch,
   ntree = 500, 
   importance = TRUE) -> rf_env
 
+#predictions
 rf_env_predictions <- predict(rf_env, newdata = select(test_clutch, -Mean.Clutch.Size))
-env_confusion <- confusionMatrix(rf_env_predictions, test_clutch$Mean.Clutch.Size) 
-env_confusion
+#check model performance (as regression)
+caret::postResample(
+  pred = rf_env_predictions,
+  obs = test_clutch$Mean.Clutch.Size)
+#check variable importance
 varImpPlot(rf_env)
 
 #tuning mtry
@@ -321,77 +367,253 @@ caret::train(
   reformulate(environmental_vars, response = "Mean.Clutch.Size"),
   data = na.omit(train_clutch[, c("Mean.Clutch.Size", environmental_vars)]),
   method = "rf",
-  metric = "RMSE",
+  metric = "RMSE", #for regression, not classification
   trControl = params_CV,
   tuneGrid = expand.grid(mtry = 1:6),
   ntree = 500) -> clutch_environment
 
-clutch_environment #mtry = 1? weird. why?? is it sequential? should i try to change the order?
-plot(clutch_environment$mtry, clutch_environment$Accuracy)
+clutch_environment #mtry = 1? weird. why?? 
+plot(clutch_environment)
 
-M1_predictions <- predict(clutch_environment, newdata = select(test_clutch, -Mean.Clutch.Size))
+M1_predictions <- predict(clutch_environment, newdata = test_clutch)
+
+caret::postResample(
+  pred = M1_predictions,
+  obs = test_clutch$Mean.Clutch.Size) -> metrics_env
 
 ```
 
-```{r rf Model2 - ecological}
+
+```{r rf Model2 - ecological all}
+#first, we have to remove the NAs. 
+train_eco <- train_clutch %>%
+  select(Mean.Clutch.Size, all_of(ecological_all_vars)) %>%
+  drop_na()
+
+test_eco <- test_clutch %>%
+  select(Mean.Clutch.Size, all_of(ecological_all_vars)) %>%
+  drop_na()
 
 #random forest eco
- randomForest(
-  Mean.Clutch.Size ~ ecological_vars,
-  data = train_clutch,
-  ntree = 500, 
-  importance = TRUE) -> rf_eco
+randomForest(
+  reformulate(ecological_all_vars, response = "Mean.Clutch.Size"),
+  data = train_eco,
+  ntree = 500,
+  importance = TRUE) ->  rf_eco_all
 
-rf_eco_predictions <- predict(rf_eco, newdata = select(test_clutch, -Mean.Clutch.Size))
-eco_confusion <- confusionMatrix(rf_eco_predictions, test_clutch$Mean.Clutch.Size) 
-eco_confusion
-varImpPlot(rf_eco)
+rf_eco_all_predictions <- predict(rf_eco_all, newdata = test_eco)
+
+#check model performance (as regression)
+caret::postResample(
+  pred = rf_eco_all_predictions,
+  obs = test_eco$Mean.Clutch.Size)
+
+varImpPlot(rf_eco_all)
 
 #train mtry
 caret::train(
-  reformulate(ecological_vars, response = "Mean.Clutch.Size"),
-  data = na.omit(train_clutch[, c("Mean.Clutch.Size", ecological_vars)]),
+  reformulate(ecological_all_vars, response = "Mean.Clutch.Size"),
+  data = na.omit(train_eco[, c("Mean.Clutch.Size", ecological_all_vars)]),
   method = "rf",
   metric = "RMSE",
   trControl = params_CV,
-  tuneGrid = expand.grid(mtry = 1:5),
+  tuneGrid = expand.grid(mtry = 1:length(ecological_filt_vars)),
   ntree = 500) -> clutch_ecological
 
-clutch_ecological #final model! most optimized! mtry = 5
-plot(clutch_ecological$mtry, clutch_ecological$Accuracy)
+clutch_ecological #mtry = 5
+plot(clutch_ecological)
 
-M2_predictions <- predict(clutch_ecological, newdata = select(test_clutch, -Mean.Clutch.Size))
+M2_predictions <- predict(clutch_ecological, newdata = test_eco)
+
+caret::postResample(
+  pred = M2_predictions,
+  obs = test_eco$Mean.Clutch.Size) -> metrics_eco_all
 
 ```
 
-```{r rf Model3 - all variables}
+```{r rf Model 3 - filtered ecological variables}
+# First, remove NAs from the variables used in this model
 
-#random forest eco
- randomForest(
-  Mean.Clutch.Size ~ all_vars,
-  data = train_clutch,
-  ntree = 500, 
-  importance = TRUE) -> rf_all
+train_eco_filt <- train_clutch %>%
+  select(Mean.Clutch.Size, all_of(ecological_filt_vars)) %>%
+  drop_na()
 
-rf_all_predictions <- predict(rf_all, newdata = select(test_clutch, -Mean.Clutch.Size))
-all_confusion <- confusionMatrix(rf_all_predictions, test_clutch$Mean.Clutch.Size) 
-all_confusion
-varImpPlot(rf_all)
+test_eco_filt <- test_clutch %>%
+  select(Mean.Clutch.Size, all_of(ecological_filt_vars)) %>%
+  drop_na()
 
-#train mtry
+
+# Random Forest: filtered ecological variables
+randomForest(
+  reformulate(ecological_filt_vars, response = "Mean.Clutch.Size"),
+  data = train_eco_filt,
+  ntree = 500,
+  importance = TRUE) -> rf_eco_filt
+
+# Predictions
+rf_eco_filt_predictions <- predict(rf_eco_filt, newdata = test_eco_filt)
+
+# Check model performance (regression)
+caret::postResample(
+  pred = rf_eco_filt_predictions,
+  obs = test_eco_filt$Mean.Clutch.Size)
+
+# Variable importance
+varImpPlot(rf_eco_filt)
+
+# Tune mtry
 caret::train(
-  reformulate(all_vars, response = "Mean.Clutch.Size"),
-  data = na.omit(train_clutch[, c("Mean.Clutch.Size", all_vars)]),
+  reformulate(ecological_filt_vars, response = "Mean.Clutch.Size"),
+  data = train_eco_filt,
   method = "rf",
   metric = "RMSE",
   trControl = params_CV,
-  tuneGrid = expand.grid(mtry = 1:13),
-  ntree = 500) -> clutch_all
+  tuneGrid = expand.grid(
+    mtry = 1:length(ecological_filt_vars)),
+  ntree = 500) -> clutch_ecological_filt
 
-clutch_all #final model! most optimized! mtry = 8
-plot(clutch_all$mtry, clutch_all$Accuracy)
+# View optimized model
+clutch_ecological_filt #mtry = 4
 
-M3_predictions <- predict(clutch_all, newdata = select(test_clutch, -Mean.Clutch.Size))
+# Plot tuning results
+plot(clutch_ecological_filt)
+
+# Predictions from tuned model
+M3_predictions <- predict(
+  clutch_ecological_filt,
+  newdata = test_eco_filt)
+
+# Evaluate tuned model
+caret::postResample(
+  pred = M3_predictions,
+  obs = test_eco_filt$Mean.Clutch.Size) -> metrics_eco_filt
 
 ```
 
+```{r rf Model4 - all variables (not filtered)}
+# First, remove NAs from the variables used in this model
+train_all <- train_clutch %>%
+  select(Mean.Clutch.Size, all_of(all_vars)) %>%
+  drop_na()
+
+test_all <- test_clutch %>%
+  select(Mean.Clutch.Size, all_of(all_vars)) %>%
+  drop_na()
+
+# Random Forest: all variables
+randomForest(
+  reformulate(all_vars, response = "Mean.Clutch.Size"),
+  data = train_all,
+  ntree = 500,
+  importance = TRUE) -> rf_all
+
+# Predictions
+rf_all_predictions <- predict(rf_all, newdata = test_all)
+
+# Check model performance (regression)
+caret::postResample(
+  pred = rf_all_predictions,
+  obs = test_all$Mean.Clutch.Size)
+
+# Variable importance
+varImpPlot(rf_all)
+
+# Tune mtry
+caret::train(
+  reformulate(all_vars, response = "Mean.Clutch.Size"),
+  data = train_all,
+  method = "rf",
+  metric = "RMSE",
+  trControl = params_CV,
+  tuneGrid = expand.grid(
+    mtry = 1:length(all_vars)),
+  ntree = 500) -> clutch_all
+
+# View optimized model
+clutch_all #mtry 11!
+
+# Plot tuning results
+plot(clutch_all)
+
+# Predictions from tuned model
+M4_predictions <- predict(clutch_all, newdata = test_all)
+
+# Evaluate tuned model
+caret::postResample(
+  pred = M4_predictions,
+  obs = test_all$Mean.Clutch.Size) -> metrics_all
+```
+
+```{r rf Model 4 all variables (filtered)}
+# First, remove NAs from the variables used in this model
+train_all_filt <- train_clutch %>%
+  select(Mean.Clutch.Size, all_of(all_filt_vars)) %>%
+  drop_na()
+
+test_all_filt <- test_clutch %>%
+  select(Mean.Clutch.Size, all_of(all_filt_vars)) %>%
+  drop_na()
+
+# Random Forest: all filtered variables
+randomForest(
+  reformulate(all_filt_vars, response = "Mean.Clutch.Size"),
+  data = train_all_filt,
+  ntree = 500,
+  importance = TRUE) -> rf_all_filt
+
+# Predictions
+rf_all_filt_predictions <- predict(rf_all_filt, newdata = test_all_filt)
+
+# Check model performance (regression)
+caret::postResample(
+  pred = rf_all_filt_predictions,
+  obs = test_all_filt$Mean.Clutch.Size)
+
+# Variable importance
+varImpPlot(rf_all_filt)
+
+# Tune mtry
+caret::train(
+  reformulate(all_filt_vars, response = "Mean.Clutch.Size"),
+  data = train_all_filt,
+  method = "rf",
+  metric = "RMSE",
+  trControl = params_CV,
+  tuneGrid = expand.grid(
+    mtry = 1:length(all_filt_vars)),
+  ntree = 500) -> clutch_all_filt
+
+# View optimized model
+clutch_all_filt #mtry 12
+
+# Plot tuning results
+plot(clutch_all_filt)
+
+# Predictions from tuned model
+M5_predictions <- predict(clutch_all_filt, newdata = test_all_filt)
+
+# Evaluate tuned model
+caret::postResample(
+  pred = M5_predictions,
+  obs = test_all_filt$Mean.Clutch.Size) -> metrics_all_filt
+
+```
+
+```{r comparing random forests}
+#ok, time to compare!
+model_comparison <- rbind(
+  Environmental = metrics_env,
+  Ecological_all = metrics_eco_all,
+  Ecological_filtered = metrics_eco_filt,
+  Combined_all = metrics_all,
+  Combined_filtered = metrics_all_filt)
+
+model_comparison
+
+# Lowest RMSE first
+model_comparison[order(model_comparison[, "RMSE"]), ]
+
+# Highest R-squared first
+model_comparison[order(-model_comparison[, "Rsquared"]), ]
+
+```
