@@ -62,19 +62,22 @@ lizard <- lizard[1:(nrow(lizard)-3), ]
 
 #now let's change SD Female adult weight to numeric.
 #hmm, .upon looking at the data, it seems that the issue is that one of the obs has a comma where it should have a decimal. let's fix that!
-lizard_climate %>%
-  mutate(SD.Female.adult.weight..g. = as.numeric(
-    str_replace(SD.Female.adult.weight..g., ",", "."))) -> lizard
+ lizard %>%
+   mutate(SD.Female.adult.weight..g. = as.numeric(
+     str_replace(SD.Female.adult.weight..g., ",", "."))) -> lizard
 
-#let's save these data in a new lizard file
-write.csv(lizard, "data/working/lizard.csv", row.names = FALSE)
+#let's save these data in a clean lizard file
+write.csv(lizard, "data/working/lizard-clean.csv", row.names = FALSE)
 
 ```
 
 
-Let's add climate data from CHELSA, particularly precip seasonality, temp seasonality, and mean annual temp. 
+Let's add climate data from CHELSA, particularly annual precip, precip seasonality, temp seasonality, mean annual temp, and bioregions
 ```{r adding climate data}
 #these data are downloaded from CHELSA, applied in QGIS, joined with original lizard, and then exported to csv
+#lizard <- read.csv("data/working/lizard-climate.csv")
+
+#can read in new lizard-working from curro, that includes lizard-climate and things he's added
 lizard <- read.csv("data/working/lizard-climate.csv")
 
 #check new variable
@@ -104,7 +107,7 @@ ggplot(lizard, aes(x = Mode.of.reproduction,
 
 ggplot(lizard, aes(x = Distribution,
                    y = Clutch.Frequency,
-                   fill = Distribution)) + geom_bar() ###
+                   fill = Distribution)) + geom_plot()
 
 ggplot(lizard, aes(x = Family,
                    fill = Mode.of.reproduction)) + geom_bar()
@@ -127,7 +130,7 @@ lizard %>%
 
 #let's cut the columns we tagged
 lizard %>% 
-  select(-SD.Female.adult.weight..g., -Sample.Size.Female.adult.weight, -SD.F.SVL.adults..mm., -Sample.size.Mean.F.SVL.adults, -Sample.size.Clutch.Size., -Clutches.per.year, -F.SVL.at.maturity..mm., -RCM) -> lizard
+  select(-fid, -SD.Female.adult.weight..g., -Sample.Size.Female.adult.weight, -SD.F.SVL.adults..mm., -Sample.size.Mean.F.SVL.adults, -Sample.size.Clutch.Size., -Clutches.per.year, -F.SVL.at.maturity..mm., -RCM) -> lizard
 ```
 
 ##Exploratory statistics
@@ -275,23 +278,20 @@ rf_cv_confusion
 
 On second thought, random forest to predict family is maybe not as useful, since we usually have family but don't often have the other measurements. so what if we do a random forest to predict a different variable, say mean clutch size, based on family. 
 ```{r random forest Mean.Clutch.Size}
-#let's just look at what it might look like, by family, with our own calculated SD
-lizard %>%
-  select(
-    Family,
-    Latitude,
-    Longitude,
-    Distribution,
-    Prefered.Habitat.Type,
-    Mean.Clutch.Size) %>%
-  na.omit() %>% 
-  mutate(Family = as.factor(Family)) %>% 
-  as.data.frame() -> clutch_data
+#let's divide our df into env and ecological variables
+#environmental
+environmental_vars <- c("mean_annual_temperature", "annual_precip", "precip_seasonality", "temp_seasonality","Latitude", "bioregion")
+
+#ecological
+ecological_vars <- c("Mean.F.SVL.adults..mm.","Offspring.SVL..mm.", "Mode.of.reproduction", "Clutch.Frequency", "Foraging.Mode", "Distribution", "Prefered.Habitat.Type")
+
+#all variables
+all_vars <- c(environmental_vars, ecological_vars)
 
 #now we'll split into our training and testing sets, being careful to make sure that the species are spread evenly between the two groups
 set.seed(123)
 
-split_clutch <- initial_split(clutch_data, prop = 0.75, strata = "Mean.Clutch.Size") #this allows us to split our dataset into training and testing datasets
+split_clutch <- initial_split(lizard, prop = 0.75, strata = "Mean.Clutch.Size") #this allows us to split our dataset into training and testing datasets
 train_clutch <- analysis(split_clutch)
 test_clutch <- assessment(split_clutch)
 
@@ -300,25 +300,98 @@ test_clutch <- assessment(split_clutch)
 
 #tune the forest
 params_CV <- trainControl(method = "cv", verboseIter = FALSE, number = 10)
+```
 
-caret::train(
-  Mean.Clutch.Size ~ .,
+```{r rf Model1 - environmental}
+
+#random forest
+ randomForest(
+  Mean.Clutch.Size ~ environmental_vars,
   data = train_clutch,
+  ntree = 500, 
+  importance = TRUE) -> rf_env
+
+rf_env_predictions <- predict(rf_env, newdata = select(test_clutch, -Mean.Clutch.Size))
+env_confusion <- confusionMatrix(rf_env_predictions, test_clutch$Mean.Clutch.Size) 
+env_confusion
+varImpPlot(rf_env)
+
+#tuning mtry
+caret::train(
+  reformulate(environmental_vars, response = "Mean.Clutch.Size"),
+  data = na.omit(train_clutch[, c("Mean.Clutch.Size", environmental_vars)]),
+  method = "rf",
+  metric = "RMSE",
+  trControl = params_CV,
+  tuneGrid = expand.grid(mtry = 1:6),
+  ntree = 500) -> clutch_environment
+
+clutch_environment #mtry = 1? weird. why?? is it sequential? should i try to change the order?
+plot(clutch_environment$mtry, clutch_environment$Accuracy)
+
+M1_predictions <- predict(clutch_environment, newdata = select(test_clutch, -Mean.Clutch.Size))
+
+```
+
+```{r rf Model2 - ecological}
+
+#random forest eco
+ randomForest(
+  Mean.Clutch.Size ~ ecological_vars,
+  data = train_clutch,
+  ntree = 500, 
+  importance = TRUE) -> rf_eco
+
+rf_eco_predictions <- predict(rf_eco, newdata = select(test_clutch, -Mean.Clutch.Size))
+eco_confusion <- confusionMatrix(rf_eco_predictions, test_clutch$Mean.Clutch.Size) 
+eco_confusion
+varImpPlot(rf_eco)
+
+#train mtry
+caret::train(
+  reformulate(ecological_vars, response = "Mean.Clutch.Size"),
+  data = na.omit(train_clutch[, c("Mean.Clutch.Size", ecological_vars)]),
   method = "rf",
   metric = "RMSE",
   trControl = params_CV,
   tuneGrid = expand.grid(mtry = 1:5),
-  ntree = 500) -> clutch_forest
+  ntree = 500) -> clutch_ecological
 
-clutch_forest #final model! most optimized! mtry = 3
+clutch_ecological #final model! most optimized! mtry = 5
+plot(clutch_ecological$mtry, clutch_ecological$Accuracy)
 
-plot(clutch_forest)
-
-clutch_predictions <- predict(clutch_forest, newdata = test_clutch)
-
-# Evaluate model performance
-caret::postResample(
-  pred = clutch_predictions,
-  obs = test_clutch$Mean.Clutch.Size)
+M2_predictions <- predict(clutch_ecological, newdata = select(test_clutch, -Mean.Clutch.Size))
 
 ```
+
+```{r rf Model3 - all variables}
+
+#random forest eco
+ randomForest(
+  Mean.Clutch.Size ~ all_vars,
+  data = train_clutch,
+  ntree = 500, 
+  importance = TRUE) -> rf_all
+
+rf_all_predictions <- predict(rf_all, newdata = select(test_clutch, -Mean.Clutch.Size))
+all_confusion <- confusionMatrix(rf_all_predictions, test_clutch$Mean.Clutch.Size) 
+all_confusion
+varImpPlot(rf_all)
+
+#train mtry
+caret::train(
+  reformulate(all_vars, response = "Mean.Clutch.Size"),
+  data = na.omit(train_clutch[, c("Mean.Clutch.Size", all_vars)]),
+  method = "rf",
+  metric = "RMSE",
+  trControl = params_CV,
+  tuneGrid = expand.grid(mtry = 1:13),
+  ntree = 500) -> clutch_all
+
+clutch_all #final model! most optimized! mtry = 8
+plot(clutch_all$mtry, clutch_all$Accuracy)
+
+M3_predictions <- predict(clutch_all, newdata = select(test_clutch, -Mean.Clutch.Size))
+
+```
+
