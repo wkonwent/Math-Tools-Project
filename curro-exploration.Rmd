@@ -44,12 +44,12 @@ library(car)
 
 ```{r read data}
 
-lizard <- read.csv( "lizard-climate.csv", fileEncoding = "latin1")
+lizard <- read.csv( "data/working/lizard-climate.csv", fileEncoding = "latin1")
 
 write.csv(lizard, "data/working/lizard_working.csv")
 
-names(lizard)
-view(lizard)
+#names(lizard)
+View(lizard)
 ```
 
 
@@ -151,8 +151,6 @@ m2 <- lm(
   data = lizard
 )
 
-
-
 m3 <- lm(
   Mean.Clutch.Size ~ Average.Female.adult.weight..g. + 
     Mode.of.reproduction +
@@ -174,15 +172,56 @@ Average.Female.adult.weight..g. * Prefered.Habitat.Type,
   data = lizard
 )
 
+
+m5 <- lm(
+  Mean.Clutch.Size ~ Average.Female.adult.weight..g. + 
+    Offspring.SVL..mm.+
+    Mode.of.reproduction +
+    Clutch.Frequency +
+    Foraging.Mode +
+    Distribution +
+    Prefered.Habitat.Type +
+    abs_latitude+
+    precip_seasonality+
+    temp_seasonality+
+    mean_annual_temperature+
+    abs_latitude*Prefered.Habitat.Type,
+  data = lizard
+)
+
 summary(m1)
 summary(m2)
 summary(m3)
+summary(m5)
+summary(m4)
 
 anova(m1,m2)
 anova(m3,m4)
 anova(m3,m2)
 
+#Create a model w\ only variables without NA and compare to model with relevant variables with NA
+#More models with interactions (e.g. climatic and ecological)
+colSums(is.na(lizard))
 
+M0_NA_clean <- lm(
+  Mean.Clutch.Size ~ Mode.of.reproduction+
+    Foraging.Mode+
+    Prefered.Habitat.Type+
+    precip_seasonality+
+    temp_seasonality+
+    mean_annual_temperature+
+    bioregion+
+    annual_precip+
+    abs_latitude,
+  data=lizard
+  
+)
+summary(M0_NA_clean)
+
+M1_only_significant <- lm(
+  Mean.Clutch.Size ~ Average.Female.adult.weight..g.+
+    temp_seasonality
+)
 ```
 
 
@@ -196,7 +235,7 @@ maximal_tree <- rpart(
   Mean.Clutch.Size ~  Average.Female.adult.weight..g. + 
     Offspring.SVL..mm. +
     precip_seasonality+
-   mean_annual_temp+
+   mean_annual_temperature+
     abs_latitude+
     F.SVL.at.maturity..mm.,
   data = train_lizard,
