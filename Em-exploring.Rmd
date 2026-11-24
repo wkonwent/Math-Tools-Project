@@ -439,4 +439,129 @@ names(data_HAC)
 
 Yeah, that's unfortunate. Whatever! We can just do it based on literature.\
 
-## I would like to try a HAC here.
+## Let's have a look at fixed clutch size
+
+```{r fixed clutch size fam}
+fixed_families <- c(
+  "Gekkota",
+  "Gymnophthalmidae",
+  "Dactyloidae"
+)
+
+lizard_fixed <- lizard_noNA %>%
+  filter(
+    !is.na(Family),
+    Family != "",
+    !is.na(Mean.Clutch.Size),
+    Family %in% fixed_families
+  )
+
+lizard_fixed
+```
+
+56 observations of fixed clutch size with NAs removed.
+
+## I would like to try a HAC here (currently garbo)
+
+```{r setting up}
+data_HAC <- lizard %>%
+  mutate(ID_HAC = row_number()) %>%
+  select(
+    ID_HAC,
+    Family,
+    Prefered.Habitat.Type,
+    where(is.numeric),
+    -any_of(c("X", "Longitude", "Latitude")), 
+  )
+
+#gower distance
+library(cluster)
+  
+traits_HAC <- data_HAC %>%
+    select(where(is.numeric), -ID_HAC)
+  
+# Remove observations with no available quantitative measurements
+  keep <- rowSums(!is.na(traits_HAC)) > 0
+  
+  traits_HAC <- traits_HAC[keep, , drop = FALSE]
+  metadata_HAC <- data_HAC[keep, ]
+  
+  # Give each observation a unique identifier
+  rownames(traits_HAC) <- metadata_HAC$ID_HAC
+  
+  # Calculate Gower distances
+  distance_HAC <- daisy(
+    traits_HAC,
+    metric = "gower"
+  )
+  
+  
+#HAC
+  result_HAC <- hclust(
+    distance_HAC,
+    method = "average"
+  )
+  
+#plot
+  plot(
+    result_HAC,
+    labels = FALSE,
+    main = "Hierarchical clustering of lizard observations",
+    xlab = "Lizard observations",
+    ylab = "Gower dissimilarity",
+    sub = "",
+  )
+  
+  metadata_HAC$Cluster <- factor(
+    cutree(result_HAC, k = 4)
+  )
+  
+  table(
+    metadata_HAC$Cluster,
+    metadata_HAC$Prefered.Habitat.Type
+  )
+  
+  table(
+    metadata_HAC$Cluster,
+    metadata_HAC$Family %in% fixed_families
+  )
+  
+  
+
+```
+
+```{r without fixed clutch}\data_HAC_without <- data_HAC %>%}
+  filter(!Family %in% fixed_families)
+
+traits_without <- data_HAC_without %>%
+  select(where(is.numeric), -ID_HAC)
+
+keep_without <- rowSums(!is.na(traits_without)) > 0
+
+traits_without <- traits_without[keep_without, , drop = FALSE]
+
+metadata_without <- data_HAC_without[keep_without, ]
+
+rownames(traits_without) <- metadata_without$ID_HAC
+
+distance_without <- daisy(
+  traits_without,
+  metric = "gower"
+)
+
+result_HAC_without <- hclust(
+  distance_without,
+  method = "average"
+)
+
+plot(
+  result_HAC_without,
+  labels = FALSE,
+  main = "HAC excluding fixed-clutch families",
+  xlab = "Lizard observations",
+  ylab = "Gower dissimilarity",
+  sub = ""
+)
+
+
+```
