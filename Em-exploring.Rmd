@@ -3,28 +3,440 @@ title: "Em's Playground"
 author: "E.Kinnear"
 date: "2026-11-13"
 output: html_document
+bibliography: references.bib
 ---
+
+## Em's Playground
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## R Markdown
+I am practicing R in my playground!
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+```{r library of libraries}
+library(tidyverse)
+library(corrplot) # For correlation plots
+library(FactoMineR) # For PCA
+library(factoextra) # For PCA plots
+library(GGally) # For multiple plots
+library(dplyr)
 ```
 
-## Including Plots
+### Having a browse
 
-You can also embed plots, for example:
+```{r loading in the data}
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+lizard <- read.csv("~/Documents/R-files/Math tools/Project/MathToolsProject/data/working/lizard_working.csv")
+
+#i remember wika removed the empty rows so i'm gonna give that a go!
+#lizard <- lizard[1:(nrow(lizard)-3),]
+
+#and fix the incorrect character variable 
+#lizard$SD.Female.adult.weight..g. <- 
+  #as.numeric(gsub(",", ".", lizard$SD.Female.adult.weight..g.))
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r first peek at our dataset}
+head(lizard)
+str(lizard)
+summary(lizard)
+
+```
+
+\
+
+## Is differing sample size going to impact our qualitative analyses?
+
+Sample size (female adult weight, for example) of most is under 100, though only \~half have a sample size. It is what it is, but might be worth noting when describing our data?
+
+```{r checking out differences in sample size}
+summary(lizard$Sample.Size.Female.adult.weight)
+sum(is.na(lizard$Sample.Size.Female.adult.weight))
+
+hist(
+  lizard$Sample.Size.Female.adult.weight,
+  main = "Distribution of sample sizes",
+  xlab = "Number of individuals measured"
+)
+```
+
+## Corrplots
+
+**To note: \
+-** Mean SVL adult and mean SVL at maturity highly correlated/redundant. \
+- Mean adult weight also highly correlated to SVL, but I think we want to keep this. When discussing earlier, I think we said 80% as correlation cut off, which is about where this sits - so if we discuss a cut-off, we need to find another way to justify this decision (prior research?) \
+- Long and lat only 62% correlated here? \
+- Clutch frequency and clutch/year highly correlated as we should expect. \
+- Absolute altitude highly correlated with temp seas and mean temp as it should.\
+\
+**To do**: \
+- remove x and fid
+
+```{r ggpairs and corrplots}
+
+#removing sample sizes and SD
+lizard %>% 
+  select(-SD.Female.adult.weight..g., -Sample.Size.Female.adult.weight, -SD.F.SVL.adults..mm., -Sample.size.Mean.F.SVL.adults, -Sample.size.Clutch.Size.) -> lizard
+
+#numeric only for ggplot
+numliz <- lizard %>%
+  select_if(is.numeric)
+
+ggpairs(numliz[3:7])
+ggpairs(numliz[8:12])
+ggpairs(numliz[13:17])
+
+corr=cor(lizard %>%
+           select_if(is.numeric) %>%
+           na.omit(lizard))
+corrplot(corr)
+```
+
+```{r cleaning out unused columns}
+lizard %>% 
+  select(-fid, -Clutches.per.year, -F.SVL.at.maturity..mm., RCM) -> lizard
+lizard %>%
+  select(-RCM) -> lizard
+
+```
+
+## MCA
+
+Okay, I'm only able to compare two qualitative variables at a time with a CA, so I'm going to try an MCA a la chatGPT (but we didn't do this in class, maybe need to check in with Lucia?)
+
+```{r preparing data}
+data_qual <- lizard %>%
+  select(
+    Family,
+    Distribution,
+    Mode.of.reproduction,
+    Prefered.Habitat.Type,
+    Foraging.Mode,
+    bioregion
+  ) %>%
+  filter(
+    if_all(everything(), ~ !is.na(.) & . != "") #removing too many NAs? also code is ?? to me
+  ) %>%
+  mutate(across(everything(), as.factor))
+```
+
+```{r perform MCA}
+result_MCA <- MCA(
+  data_qual,
+  graph = FALSE
+)
+```
+
+```{r eigenvalues}
+fviz_eig(result_MCA)
+```
+
+```{r create biplot}
+fviz_mca_biplot(
+  result_MCA,
+  repel = TRUE
+)
+
+fviz_mca_var(
+  result_MCA,
+  repel = TRUE
+)
+
+fviz_mca_var(
+  result_MCA,
+  col.var = "contrib",
+  gradient.cols = c("blue", "orange", "red"),
+  repel = TRUE
+)
+```
+
+MCA with family shows only \~10% of variation in first 2 dimensions and is a bit wild.
+
+```{r MCA without family}
+#ok, word on the street is including family might be a bad idea - due to rare-category distortion (we should also be careful of this with some of the habitats, or try merging habitats)
+data_qual_eco <- lizard %>%
+  select(
+    Distribution,
+    Mode.of.reproduction,
+    Prefered.Habitat.Type,
+    Foraging.Mode,
+    bioregion
+  ) %>%
+  filter(
+    if_all(everything(), ~ !is.na(.) & . != "")
+  ) %>%
+  mutate(across(everything(), as.factor))
+
+result_MCA_eco <- MCA(
+  data_qual_eco,
+  graph = FALSE
+)
+
+fviz_mca_var(
+  result_MCA_eco,
+  col.var = "contrib",
+  repel = TRUE
+)
+
+result_MCA_eco$var$contrib
+
+fviz_contrib(
+  result_MCA_eco,
+  choice = "var",
+  axes = 1,
+  top = 15
+)
+
+fviz_contrib(
+  result_MCA_eco,
+  choice = "var",
+  axes = 2,
+  top = 15
+)
+
+fviz_mca_var(
+  result_MCA_eco,
+  col.var = "cos2",
+  gradient.cols = c("lightblue", "blue", "red"),
+  repel = TRUE
+)
+#checking balance of habitat type (bad)
+lizard %>%
+  select(
+    Distribution,
+    Mode.of.reproduction,
+    Prefered.Habitat.Type,
+    Foraging.Mode
+  ) %>%
+  pivot_longer(
+    everything(),
+    names_to = "Variable",
+    values_to = "Category"
+  ) %>%
+  count(Variable, Category, sort = TRUE)
+```
+
+Adding bioregion changed things. Reduced inertia explained in first two dimensions.\
+
+```{r family is projected but not used to calculate}
+data_qual_all <- lizard %>%
+  select(
+    Family,
+    Distribution,
+    Mode.of.reproduction,
+    Prefered.Habitat.Type,
+    Foraging.Mode
+  ) %>%
+  filter(
+    if_all(everything(), ~ !is.na(.) & . != "")
+  ) %>%
+  mutate(across(everything(), as.factor))
+
+result_MCA_sup <- MCA(
+  data_qual_all,
+  quali.sup = 1,
+  graph = FALSE
+)
+
+fviz_mca_var(
+  result_MCA_sup,
+  col.var = "contrib",
+  repel = TRUE
+)
+```
+
+**Without bioregion** \~30% inertia explained in first two dimensions. Oviparous and viviparous along dimension two, active and sit and weight separated along dim1. Temp and Tropical also on different dimensions but contribution is low and not very separated. Maybe there are links between Sit&Wait and some of their close habitats. Bromelicolous heavily impacts the axis formation so it would be interesting to re-do with the habitats merged.
+
+```{r let's look at habitat}
+colSums(is.na(lizard))
+
+lizard_noNA <- lizard %>%
+  drop_na()
+  
+lizard_noNA %>%
+  count(Prefered.Habitat.Type, sort = TRUE)
+  
+lizard %>%
+  count(Prefered.Habitat.Type, sort = TRUE) 
+  
+comparison_habitat <- lizard %>%
+  count(Prefered.Habitat.Type, name = "Original") %>%
+  full_join(
+    lizard_noNA %>%
+      count(Prefered.Habitat.Type, name = "After_removing_NA"),
+    by = "Prefered.Habitat.Type"
+  ) %>%
+  mutate(
+    After_removing_NA = replace_na(After_removing_NA, 0),
+    Removed = Original - After_removing_NA,
+    Percentage_remaining = round(
+      After_removing_NA / Original * 100, 1
+    )
+  ) %>%
+  arrange(desc(Original))
+
+comparison_habitat
+
+```
+
+\
+***Anolis oxylophus*** - aquatic -\> semi-arboreal *-\> scansorial* @herrmann2017 \
+***Mabuya macrorhyncha*** **-** bromelicolous. According to @Rocha, show signs of scansoriality. Scansoriality = climbing tendencies. This is the group that @meiri2020 used for arboreal, semi-arboreal. So we can group with arboreal, potentially rename. So Bromelicolous *-\> scansorial*\
+***Crocodilurus amazonicus*** **-** semi-aquatic, forages in water apparently can climb in high water \@[@martins2006] . aquatic -\> arboreal *-\> scansorial* as per \@[@meiri2020].\
+\
+Therefore, all aquatic, bromelicolous, semi-arboreal, and arboreal species could be grouped into 'scansorial'. Saxicolous = rocks, group with terrestrial? Fossorial is apparently it's own thing.. but.. maybe since there's only 4 left, it can be grouped into terrestrial? And we just keep two? Eep. \
+
+```{r with that in mind, let's check that the habitats suggested to be grouped are actually similar}
+data_MCA_habitat <- lizard %>%
+  select(
+    Distribution,
+    Mode.of.reproduction,
+    Foraging.Mode,
+    Prefered.Habitat.Type
+  ) %>%
+  filter(
+    if_all(everything(), ~ !is.na(.) & . != "")
+  ) %>%
+  mutate(across(everything(), as.factor))
+
+# MCA: habitat is supplementary
+result_MCA_habitat <- MCA(
+  data_MCA_habitat,
+  quali.sup = 4,
+  graph = FALSE
+)
+
+# Plot habitat categories
+fviz_mca_var(
+  result_MCA_habitat,
+  choice = "var.cat",
+  repel = TRUE
+)
+```
+
+hmm.. well. According to the categorical traits (without bioregion because that made things weird earlier, it doesn't look that good, but that doesn't mean too much! Let's look at quantitative traits.
+
+```{r PCA to suss out habtiat type correlation}
+data_PCA <- lizard %>%
+  select(
+    where(is.numeric), -Longitude, -Latitude, -Clutch.Frequency, -mean_annual_temperature, -X,
+    Prefered.Habitat.Type
+  ) %>%
+  filter(
+    !is.na(Prefered.Habitat.Type),
+    Prefered.Habitat.Type != ""
+  ) %>%
+  drop_na()
+
+result_PCA <- prcomp(
+  data_PCA %>% select(where(is.numeric)),
+  center = TRUE,
+  scale. = TRUE
+)
+
+fviz_pca_ind(
+  result_PCA,
+  habillage = data_PCA$Prefered.Habitat.Type,
+  addEllipses = TRUE,
+  repel = FALSE
+)
+
+#scree
+fviz_eig(result_PCA, addlabels = TRUE)
+
+#make it easier to read 
+fviz_pca_ind(
+  result_PCA,
+  habillage = data_PCA$Prefered.Habitat.Type,
+  pointsize = 1,
+  alpha.ind = 0.4,
+  addEllipses = TRUE,
+  repel = FALSE
+)
+```
+
+Not gonna lie, it's also not.. great. But it does say that there are too few points to create the ellipses, so.. I do kinda feel that it's just because it's so unbalanced.
+
+```{r try tiny sample}
+set.seed(123)
+
+data_PCA_balanced <- data_PCA %>%
+  group_by(Prefered.Habitat.Type) %>%
+  slice_sample(n = 10) %>%
+  ungroup()
+
+result_PCA_balanced <- prcomp(
+  data_PCA_balanced %>% select(where(is.numeric)),
+  center = TRUE,
+  scale. = TRUE
+)
+
+fviz_pca_ind(
+  result_PCA_balanced,
+  habillage = data_PCA_balanced$Prefered.Habitat.Type,
+  addEllipses = TRUE,
+  repel = FALSE
+)
+```
+
+Meh. Not great. But we don't need to tell anyone about this. Unbalanced and all.\
+
+Let's try a HAC just to see the habitat type.\
+\
+
+```{r HAC for habitat similarity}
+#select data (quant)
+data_HAC <- lizard %>%
+  select(
+    Prefered.Habitat.Type,
+    where(is.numeric),
+    -Longitude,
+    -Latitude,
+    -abs_latitude,
+    -X
+  ) %>%
+  filter(
+    !is.na(Prefered.Habitat.Type),
+    Prefered.Habitat.Type != ""
+  )
+
+#average traints
+habitat_means <- data_HAC %>%
+  group_by(Prefered.Habitat.Type) %>%
+  summarise(
+    across(where(is.numeric), ~ mean(.x, na.rm = TRUE))
+  )
+
+#calculate distance
+habitat_matrix <- habitat_means %>%
+  column_to_rownames("Prefered.Habitat.Type")
+
+habitat_scaled <- scale(habitat_matrix)
+
+habitat_dist <- dist(
+  habitat_scaled,
+  method = "euclidean"
+)
+
+#HAC
+result_HAC <- hclust(
+  habitat_dist,
+  method = "ward.D2"
+)
+
+#plot!
+plot(
+  result_HAC,
+  main = "Hierarchical clustering of lizard habitats",
+  xlab = "Habitat type",
+  sub = "",
+  ylab = "Dissimilarity"
+)
+
+names(data_HAC)
+```
+
+Yeah, that's unfortunate. Whatever! We can just do it based on literature.\
+
+## I would like to try a HAC here.
