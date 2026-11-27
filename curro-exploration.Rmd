@@ -97,12 +97,13 @@ View(summary_table)
 
 ```
 
+The data was modified to add a column for absolute latitude, so the effect of latitude is regarded as general relative distance from the equator, in order to avoid non linear correlation.
 
 ```{r add abs_latitude}
 lizard$abs_latitude <- abs(lizard$Latitude)
 ```
 
-
+Some pre-analysis were made based on visualization by plotting relations between mean clutch size and variables such as absolute latitude, latitude and climatic variables. 
 ```{r plots}
 plot(lizard$Mean.Clutch.Size, lizard$mean_annual_temp)
 plot(Mean.Clutch.Size ~ abs_latitude, data = lizard)
@@ -110,6 +111,7 @@ plot(lizard$abs_latitude, lizard$Mean.Clutch.Size)
 plot(lizard$Latitude, lizard$Mean.Clutch.Size)
 ```
 
+Corrplots were additionally interpreted to find unwanted correlations between explanatory variables. (THis was Em)
 
 ```{r corrplots}
 #corrplots
@@ -147,7 +149,7 @@ m2 <- lm(
     abs_latitude+
     precip_seasonality+
     temp_seasonality+
-    mean_annual_temp,
+    mean_annual_temperature,
   data = lizard
 )
 
@@ -220,8 +222,177 @@ summary(M0_NA_clean)
 
 M1_only_significant <- lm(
   Mean.Clutch.Size ~ Average.Female.adult.weight..g.+
-    temp_seasonality
+    temp_seasonality +
+    Prefered.Habitat.Type +
+    precip_seasonality,
+  data = lizard
 )
+
+summary(M1_only_significant)
+anova(M1_only_significant)
+```
+
+From the previous analysis a group of relatively independent variables were selected in order to test their explanatory power and capacity of prediction for new individuals. Family was added in some of the model as illustrated by Mesquita (2016), phylogenetic has a strong influence on reproductive traits. Categories with a small number of observations were grouped under "other" for preferred habitat type and family, so estimates are more stable and every test case can be predicted. A series of models were created with an increasing complexity, for the studied set of variables of ecological, climatic and the extra family one, with three basic models, null model, female size and reproduction mode together with female size.
+
+Models were tested on a cross validating process for which the data was splitted by species so the model predicts an individual for an unkown species that it was not on the training data, so (look for it) is avoided.
+
+The model based on size and family was indentifyed as the better predictor based on mean average error of the predictions, on the other hand size_eco_clim was the best model without taking into account for family.
+
+```{r AI-code}
+
+# Short names make the models easier to read
+
+lizard_pred <- data.frame(
+  Species                 = lizard$Species,
+  clutch                  = lizard$Mean.Clutch.Size,
+  log_svl                 = log(lizard$Mean.F.SVL.adults..mm.),   # female body size
+  repro                   = factor(lizard$Mode.of.reproduction),
+  forage                  = factor(lizard$Foraging.Mode),
+  habitat                 = as.character(lizard$Prefered.Habitat.Type),
+  abs_latitude            = lizard$abs_latitude,
+  temp_seasonality        = lizard$temp_seasonality,
+  precip_seasonality      = lizard$precip_seasonality,
+  mean_annual_temperature = lizard$mean_annual_temperature,
+  Family                  = lizard$Family
+)
+
+# Habitat categories with very few species (< 20) are merged into "Other"
+rare_habitats <- c("Fossorial", "Psammophilus", "Bromelicolous",
+                   "Aquatic", "Semi-arboreal")
+lizard$habitat[lizard_pred$habitat %in% rare_habitats] <- "Other"
+lizard$habitat <- relevel(factor(lizard_pred$habitat), ref = "Terrestrial")
+
+#Similar for families
+fam_counts <- table(lizard_pred$Family)
+small_fam  <- names(fam_counts)[fam_counts < 20]
+
+lizard_pred$Family <- as.character(lizard_pred$Family)
+lizard_pred$Family[lizard_pred$Family %in% small_fam] <- "Other"
+lizard_pred$Family <- factor(lizard_pred$Family)
+table(lizard_pred$Family)   # check: about a dozen families plus "Other"
+
+# Only use predictors you can get from a live female or from her location:
+# body size, reproductive mode, foraging mode, habitat, latitude, climate.
+# (Offspring SVL and clutch frequency are left out on purpose: they usually
+# need reproductive data you would not have for a new female.)
+vars <- c("clutch", "log_svl", "repro", "forage", "habitat",
+          "abs_latitude", "temp_seasonality", "precip_seasonality",
+          "mean_annual_temperature", "Species", "Family")
+
+# Keep only rows with no missing values in these variables,
+# so all models are fitted and compared on exactly the same data
+dat <- lizard_pred[complete.cases(lizard_pred[, vars]), vars]
+nrow(dat)                      # number of rows used
+length(unique(dat$Species))    # number of species
+
+# ---------------------------------------------------------------------
+# 2. Look at the response
+# ---------------------------------------------------------------------
+summary(dat$clutch)
+hist(dat$clutch, breaks = 40, main = "Mean clutch size", xlab = "Clutch size")
+tail(sort(dat$clutch))         # check the largest values (max is around 43)
+
+# Clutch size here is a mean (many non-integer values), always positive and
+# right-skewed -> Gamma family with a log link 
+
+# ---------------------------------------------------------------------
+# 3. Candidate models (from simple to more complex)
+# ---------------------------------------------------------------------
+formulas <- list(
+  null              = clutch ~ 1,    # baseline: always predict the average
+  size              = clutch ~ log_svl,
+  size_repro        = clutch ~ log_svl + repro,
+  size_eco          = clutch ~ log_svl + repro + forage + habitat,
+  size_eco_lat      = clutch ~ log_svl + repro + forage + habitat + abs_latitude,
+  size_eco_clim     = clutch ~ log_svl + repro + forage + habitat +
+                     temp_seasonality + precip_seasonality +
+                     mean_annual_temperature,
+  size_lat_x_hab    = clutch ~ log_svl + repro + forage + habitat +
+                     abs_latitude * habitat,
+  size_fam          = clutch ~ log_svl + Family,
+  size_fam_eco      = clutch ~ log_svl + Family + repro + forage + habitat,
+  size_fam_eco_lat  = clutch ~ log_svl + Family + repro + forage + habitat + abs_latitude,
+  size_fam_eco_clim = clutch ~ log_svl + Family + repro + forage + habitat +
+                     temp_seasonality + precip_seasonality +
+                     mean_annual_temperature
+  
+)
+
+# ---------------------------------------------------------------------
+# 4. How well does each model predict? (cross-validation)
+#    Idea: hide part of the data, fit the model on the rest, predict the
+#    hidden part and compare predictions with the real values.
+#    Folds are made by SPECIES, so a species is never in both the
+#    training and the test set. This tells us how well the model predicts
+#    a species it has never seen (a tougher, more honest test).
+# ---------------------------------------------------------------------
+
+set.seed(123)
+folds <- group_vfold_cv(dat, group = Species, v = 10)
+
+
+results <- data.frame()
+cv_preds <- list()
+
+for (model_name in names(formulas)) {
+
+  # For each fold: fit on the training part, predict the held-out part
+  pred_list <- lapply(folds$splits, function(s) {
+    fit  <- glm(formulas[[model_name]], family = Gamma(link = "log"),
+                data = analysis(s))
+    test <- assessment(s)
+    data.frame(row  = as.integer(s, data = "assessment"),   # row numbers in dat
+               pred = predict(fit, newdata = test, type = "response"))
+  })
+  pred_df <- do.call(rbind, pred_list)
+
+  # Put the predictions back in the original row order
+  pred <- rep(NA, nrow(dat))
+  pred[pred_df$row] <- pred_df$pred
+  cv_preds[[model_name]] <- pred
+
+  fit_all <- glm(formulas[[model_name]], family = Gamma(link = "log"), data = dat)
+
+  results <- rbind(results, data.frame(
+    model = model_name,
+    AIC   = AIC(fit_all),                          # fit on all data (lower = better)
+    MAE   = mean(abs(dat$clutch - pred)),          # average error in eggs/young
+    RMSE  = sqrt(mean((dat$clutch - pred)^2)),     # penalises big errors more
+    R2    = cor(dat$clutch, pred)^2                # predicted vs observed
+  ))
+}
+
+results[order(results$MAE), ]
+results
+
+# Pick the best model (lowest cross-validated error). You can also choose
+# a simpler one by hand if it is almost as good.
+best_name <- results$model[which.min(results$MAE)]
+best_name
+
+# Predicted (cross-validated) vs observed clutch size
+plot(dat$clutch, cv_preds[[best_name]],
+     xlab = "Observed clutch size", ylab = "Predicted clutch size",
+     main = paste("Cross-validated predictions:", best_name))
+abline(0, 1, col = "red")   # perfect predictions fall on this line
+
+# ---------------------------------------------------------------------
+# 5. Final model: fit on all the data and interpret it
+# ---------------------------------------------------------------------
+final <- glm(formulas[[best_name]], family = Gamma(link = "log"), data = dat)
+summary(final)
+
+# Fit all candidate models on the same data
+fits <- lapply(formulas, glm, family = Gamma(link = "log"), data = dat)
+
+# Does each step improve the fit? (small p-value = yes)
+anova(fits$null,       fits$size,       test = "F")   # does body size help?
+anova(fits$size,       fits$size_repro, test = "F")   # does reproductive mode help?
+anova(fits$size_repro, fits$size_eco,   test = "F")   # do foraging + habitat help?
+anova(fits$size_eco,   fits$size_eco_lat,  test = "F") # does latitude help?
+anova(fits$size_eco,   fits$size_eco_clim, test = "F") # does climate help?
+anova(fits$size_eco,   fits$size_fam_eco,  test = "F") # does family help?
+
 ```
 
 
