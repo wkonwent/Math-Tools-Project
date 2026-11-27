@@ -1,5 +1,5 @@
 ---
-title: "Demo Stylish Article"
+title: "Lizards, Booyah"
 # Output formats
 format:
   stylisharticle-pdf:
@@ -12,18 +12,9 @@ format:
     css: colors.css
 # Authors (https://quarto.org/docs/journals/authors.html#author-schema)
 author:
-  - name: Curro Beleño Fito, Emily Kinnear, Weronika Konwent
-    affiliations:
-      - name: AgroParisTech
-        department: Scientific Department
-        address: Somewhere
-        city: City
-        country: Country
-        postal-code: 9999
-  - name: His Friend
-  - name: Athird One
-    affiliations:
-      - name: Third Affiliation
+  - name: Curro Beleño Fito
+  - name: Emily Kinnear
+  - name: Weronika Konwent
 # Abstract and Keywords
 abstract: |
   This document is only a demo explaining how to use the Stylish Article template.
@@ -31,7 +22,7 @@ keywords: [template, demo]
 # Bibliography
 reference-section-title: References
 bibliography: references.bib
-csl: https://www.zotero.org/styles?q=id%3Aapa-single-spaced
+csl: https://raw.githubusercontent.com/citation-style-language/styles/master/apa-single-spaced.csl
 # Language
 lang: en-GB
 # Code options 
@@ -48,10 +39,7 @@ execute:
   # Cache code results
   cache: false
 # Template specific
-journalinfo: "Publication reference"
-archive: "DOI: xxx/xx"
 keywordlabel: Keywords
-corrauthorlabel: Corresponding Author
 ---
 
 ```{r}
@@ -138,7 +126,10 @@ Traditionally, assessments of reproductive biology in these animals have depende
 Sex and clutch size and frequency are evaluated through dissection by observing the gonads, follicular stage, uterine condition, and embryonic condition [@duran2026, @mesquita2016] .
 Although these approaches have generated valuable information, their reliance on lethal sampling presents ethical and practical limitations, particularly when investigating species that are vulnerable or have low-density populations.
 
-Non-lethal techniques, including ultrasonography and hormonal profiling, offer promising alternatives for investigating reproductive biology in small lizards [@duran2026]. The application of such methods to small lizards is recent, however, and the methodological approach remains underdeveloped. An additional approach may be possible through the use of existing comparative datasets. Extensive compilations of morphological, ecological, and reproductive information for lizards provide an opportunity to investigate relationships between reproductive traits and environmental or ecological variables [@meiri2020, @mesquita2015].
+Non-lethal techniques, including ultrasonography and hormonal profiling, offer promising alternatives for investigating reproductive biology in small lizards [@duran2026].
+The application of such methods to small lizards is recent, however, and the methodological approach remains underdeveloped.
+An additional approach may be possible through the use of existing comparative datasets.
+Extensive compilations of morphological, ecological, and reproductive information for lizards provide an opportunity to investigate relationships between reproductive traits and environmental or ecological variables [@meiri2020, @mesquita2015].
 Identifying such relationships could allow for the development of predictive models to estimate reproductive parameters such as clutch size and frequency across species.
 
 Developing reliable predictive relationships would provide an alternative approach to traditional lethal sampling methods, promoting ethical research on lizard reproductive strategies that ultimately could improve our understanding of reproductive diversity across lizards, and contribute valuable information to species conservation and management.
@@ -166,41 +157,6 @@ Results
 # Discussion
 
 Discussion
-
-# Exploratory data analysis
-
-Data are from: Mesquita, Daniel O., et al. “Life history data of lizards of the world (Ecological Archives E096-058).” Ecology 96.2 (2015): 594-594.
-
-Looks like there are lots of NAs in our data, particularly in the measured observation.
-Reproduction, foraging, distribution, and habitat all have lots of
-
-```{r}
-echo=FALSE
-#| label: Exploratory analysis
-#| out-width: 80%
-
-#read in dataset
-lizard <- read.csv("lizard.csv")
-
-head(lizard)
-dim(lizard)
-tail(lizard) #oooh empty rows i hate that, let's delete
-names(lizard)
-str(lizard)
-
-#ok first let's remove the empty rows at the end
-lizard <- lizard[1:(nrow(lizard)-3), ]
-
-#then let's look at NAs - lots!
-colSums(is.na(lizard))
-
-#let's look at what we do know, to try to choose a balanced design
-table(lizard$Mode.of.reproduction) #lots, but not balanced
-table(lizard$Foraging.Mode) #well balanced!
-table(lizard$Distribution) #also well balanced!
-table(lizard$Prefered.Habitat.Type) #not well balanced at all, beware
-
-```
 
 ## Figures
 
@@ -352,25 +308,6 @@ For equations, the label is added manually by the code `{#eq-xxx}` after the end
 Sections can be tagged by ending their title with `{#sec-yyy}`.
 
 In all cases, the call to the reference is made by `@`.
-
-## Bibliography
-
-Bibliographic references included in the `.bib` file declared in the document header can be called by `[@CitationKey]`, in parentheses [@Xie2018], or without square brackets, in the text, as @Xie2016.
-
-The bibliographic style can be specified, by adding the line
-
-```         
-csl: file_name.csl
-```
-
-in the document header and copying the *.csl* style file to the project folder.
-More than a thousand styles are available[^1] and their URL can be used instead of copying the file, e.g.:
-
-[^1]: <https://github.com/citation-style-language/styles>
-
-```         
-csl: https://www.zotero.org/styles?q=id%3Aapa-single-spaced
-```
 
 # GitHub Action
 
