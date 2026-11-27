@@ -20,14 +20,8 @@ author:
         city: City
         country: Country
         postal-code: 9999
-    orcid: 0000-0000-0000-0000
-    email: JD@example.org
-    url: https://example.org/
   - name: His Friend
   - name: Athird One
-    corresponding: true
-    email: at1@x.com
-    url: https://www.x.com
     affiliations:
       - name: Third Affiliation
 # Abstract and Keywords
@@ -134,7 +128,32 @@ set.seed(973)
 
 # Introduction
 
-Here we write an intro for our document
+## Background
+
+Effective conservation planning relies on a thorough understanding of species' life-history traits, particularly their reproductive biology and strategies [@comizzoli2019].
+This knowledge is especially important for understudied species for which conventional approaches to reproductive assessment involve lethal sampling (source??).
+In such cases, developing alternative methods is essential to minimize the impact of research on natural populations and promote ethical and effective research.
+Lizards exhibit considerable diversity in reproductive strategies, with reproductive strategies influenced by a variety of ecological and environmental variables.
+Traditionally, assessments of reproductive biology in these animals have depended on the examination of preserved or sacrificed specimens.
+Sex and clutch size and frequency are evaluated through dissection by observing the gonads, follicular stage, uterine condition, and embryonic condition [@duran2026, @mesquita2016] .
+Although these approaches have generated valuable information, their reliance on lethal sampling presents ethical and practical limitations, particularly when investigating species that are vulnerable or have low-density populations.
+
+Non-lethal techniques, including ultrasonography and hormonal profiling, offer promising alternatives for investigating reproductive biology in small lizards [@duran2026]. The application of such methods to small lizards is recent, however, and the methodological approach remains underdeveloped. An additional approach may be possible through the use of existing comparative datasets. Extensive compilations of morphological, ecological, and reproductive information for lizards provide an opportunity to investigate relationships between reproductive traits and environmental or ecological variables [@meiri2020, @mesquita2015].
+Identifying such relationships could allow for the development of predictive models to estimate reproductive parameters such as clutch size and frequency across species.
+
+Developing reliable predictive relationships would provide an alternative approach to traditional lethal sampling methods, promoting ethical research on lizard reproductive strategies that ultimately could improve our understanding of reproductive diversity across lizards, and contribute valuable information to species conservation and management.
+
+## Objectives
+
+The main objective of this report is to investigate whether mean clutch size in lizards can be estimated using existing comparative data on species' ecological characteristics and environmental conditions based on geographic distributions.
+
+To address this objective, the following research questions will be investigated:
+
+1.  Which ecological and environmental variables are associated with variation in mean clutch size among lizard species?
+
+2.  To what extent do environmental and ecological variables independently explain variation in mean clutch size?
+
+3.  If these variables explain sufficient variation, which combination of explanatory variables and statistical modelling approach provides the most suitable model for predicting mean clutch size across lizard species?
 
 # Material and Methods
 
